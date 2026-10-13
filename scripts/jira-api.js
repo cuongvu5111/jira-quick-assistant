@@ -405,6 +405,96 @@ const JiraApi = {
     } catch (err) {
       return { success: false, error: err.message };
     }
+  },
+
+  /**
+   * Tự động chuyển trạng thái của một Issue sang Resolve / Done / Closed.
+   * Truy vấn danh sách workflow transitions qua GET /rest/api/2/issue/{issueKey}/transitions
+   * và kích hoạt transition có tên phù hợp.
+   *
+   * @param {string} baseUrl
+   * @param {string} issueKey
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, transitionName?: string, toStatus?: string, skipped?: boolean, reason?: string, error?: string}>}
+   */
+  async resolveIssue(baseUrl, issueKey, authConfig = {}) {
+    const cleanUrl = this.normalizeBaseUrl(baseUrl);
+    const key = (issueKey || '').trim().toUpperCase();
+
+    if (!cleanUrl || !key) {
+      return { success: false, error: 'Thiếu Jira URL hoặc Issue Key' };
+    }
+
+    const transitionsEndpoint = `${cleanUrl}/rest/api/2/issue/${key}/transitions`;
+
+    try {
+      // 1. Lấy danh sách các transition hợp lệ hiện tại của issue
+      const getRes = await fetch(transitionsEndpoint, {
+        method: 'GET',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include'
+      });
+
+      if (!getRes.ok) {
+        const errorMsg = await this.parseErrorMessage(getRes);
+        return { success: false, error: errorMsg };
+      }
+
+      const data = await getRes.json();
+      const transitions = data.transitions || [];
+
+      if (transitions.length === 0) {
+        return {
+          success: false,
+          skipped: true,
+          reason: 'Issue không có transition khả dụng (có thể đã ở trạng thái hoàn thành)'
+        };
+      }
+
+      // 2. Tìm transition tương ứng với Resolve / Done / Closed / Hoàn thành
+      const targetRegex = /(resolve|resolved|done|close|closed|hoàn thành|đóng|finish)/i;
+      const targetTransition = transitions.find((t) => {
+        const nameMatch = t.name && targetRegex.test(t.name);
+        const toMatch = t.to && t.to.name && targetRegex.test(t.to.name);
+        const categoryMatch = t.to && t.to.statusCategory && t.to.statusCategory.key === 'done';
+        return nameMatch || toMatch || categoryMatch;
+      });
+
+      if (!targetTransition) {
+        return {
+          success: false,
+          skipped: true,
+          reason: `Không tìm thấy transition Resolve phù hợp (các transition hiện có: ${transitions.map((t) => t.name).join(', ')})`
+        };
+      }
+
+      // 3. Thực hiện chuyển trạng thái (POST)
+      const postBody = {
+        transition: {
+          id: targetTransition.id
+        }
+      };
+
+      const postRes = await fetch(transitionsEndpoint, {
+        method: 'POST',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include',
+        body: JSON.stringify(postBody)
+      });
+
+      if (!postRes.ok && postRes.status !== 204) {
+        const errorMsg = await this.parseErrorMessage(postRes);
+        return { success: false, error: errorMsg };
+      }
+
+      return {
+        success: true,
+        transitionName: targetTransition.name,
+        toStatus: targetTransition.to?.name || 'Resolved'
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   }
 };
 

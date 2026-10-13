@@ -148,12 +148,17 @@
         <input type="text" id="log-comment" class="form-control" value="Làm việc theo kế hoạch" placeholder="Ghi chú worklog...">
       </div>
 
-      <!-- Tùy chọn bỏ qua ngày/task đã đủ 8h -->
+      <!-- Tùy chọn bỏ qua ngày/task đã đủ 8h và tự động resolve -->
       <div class="form-check-group">
         <label class="checkbox-container">
           <input type="checkbox" id="skip-logged-days" checked>
           <span class="checkmark"></span>
           <span>Bỏ qua task đã đạt ngưỡng 8h (Tuân thủ quy định công ty)</span>
+        </label>
+        <label class="checkbox-container" style="margin-top: 6px;">
+          <input type="checkbox" id="auto-resolve-task" checked>
+          <span class="checkmark"></span>
+          <span>Tự động chuyển trạng thái <strong>Resolve / Done</strong> sau khi logwork (tránh trễ hạn due date)</span>
         </label>
       </div>
 

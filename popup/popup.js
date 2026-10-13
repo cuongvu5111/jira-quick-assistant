@@ -20,7 +20,8 @@ const AppState = {
     excludedHolidays: '',
     recentIssues: [],
     lastProjectKey: '',
-    lastParentKey: ''
+    lastParentKey: '',
+    autoResolveTask: true
   },
   timeMode: 'week', // 'week' | 'month'
   targetMode: 'parent-subtasks', // 'parent-subtasks' | 'single' | 'multi-keys'
@@ -217,6 +218,11 @@ function applySettingsToUI() {
   const commentInput = document.getElementById('log-comment');
   if (commentInput && defaultComment) commentInput.value = defaultComment;
 
+  const autoResolveInput = document.getElementById('auto-resolve-task');
+  if (autoResolveInput && typeof AppState.settings.autoResolveTask === 'boolean') {
+    autoResolveInput.checked = AppState.settings.autoResolveTask;
+  }
+
   // Điền parent key nếu có lưu
   if (lastParentKey) {
     const parentInput = document.getElementById('parent-issue-key');
@@ -338,6 +344,15 @@ function initEventHandlers() {
   document.getElementById('skip-logged-days').addEventListener('change', () => {
     buildTaskMappingAndSummary();
   });
+
+  // Checkbox tự động resolve task
+  const autoResolveCheck = document.getElementById('auto-resolve-task');
+  if (autoResolveCheck) {
+    autoResolveCheck.addEventListener('change', (e) => {
+      AppState.settings.autoResolveTask = e.target.checked;
+      saveSettingsToStorage();
+    });
+  }
 
   // Ẩn/Hiện bảng chi tiết phân bổ
   document.getElementById('btn-toggle-days-preview').addEventListener('click', () => {
@@ -807,6 +822,19 @@ async function handleStartLogwork() {
     if (res.success) {
       successCount++;
       appendConsole(`✅ [${item.day.displayDate}] ${item.issueKey}: Log thành công (${item.hoursToLog})`);
+
+      // Tự động Resolve Task nếu checkbox được bật
+      const shouldResolve = document.getElementById('auto-resolve-task')?.checked;
+      if (shouldResolve) {
+        const resolveRes = await JiraApi.resolveIssue(jiraBaseUrl, item.issueKey, authConfig);
+        if (resolveRes.success) {
+          appendConsole(`✨ [${item.issueKey}] Đã chuyển trạng thái: ${resolveRes.transitionName} (${resolveRes.toStatus})`);
+        } else if (resolveRes.skipped) {
+          appendConsole(`ℹ️ [${item.issueKey}] ${resolveRes.reason}`);
+        } else if (resolveRes.error) {
+          appendConsole(`⚠️ [${item.issueKey}] Không thể resolve: ${resolveRes.error}`);
+        }
+      }
     } else {
       failCount++;
       appendConsole(`❌ [${item.day.displayDate}] ${item.issueKey}: Thất bại - ${res.error}`, true);

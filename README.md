@@ -64,7 +64,8 @@ lucid-planck/
    - **Thứ 2 (12/10)** ↔ `DOFFICE-3881` *(Sẵn sàng 8h)*
    - **Thứ 3 (13/10)** ↔ `DOFFICE-3882` *(Sẵn sàng 8h)*
    - Nếu bất kỳ task nào đã có đủ 8h trước đó, hệ thống sẽ gắn nhãn `⚠️ Đã đủ 8h (Bỏ qua)` và tự động loại trừ để **tuân thủ nghiêm ngặt quy định công ty**.
-6. Bấm **⚡ Bắt đầu Phân Bổ & Logwork**: Hệ thống sẽ ghi giờ tuần tự cho từng task và cập nhật thanh tiến trình theo thời gian thực.
+6. *(Tùy chọn)* Bật checkbox: **Tự động chuyển trạng thái Resolve / Done sau khi logwork** để extension tự động đóng task ngay sau khi ghi giờ, giúp bạn không bao giờ bị quên resolve trễ due date.
+7. Bấm **⚡ Bắt đầu Phân Bổ & Logwork**: Hệ thống sẽ ghi giờ tuần tự cho từng task và cập nhật thanh tiến trình theo thời gian thực.
 
 ---
 
