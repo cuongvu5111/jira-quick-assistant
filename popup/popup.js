@@ -565,10 +565,34 @@ function refreshCalendarData() {
     weekSelect.appendChild(opt);
   });
 
-  // Mặc định chọn tuần đầu tiên hoặc tuần hiện tại
+  // Mặc định tự động chọn tuần hiện tại (hoặc tuần đầu tiên nếu không khớp)
+  let defaultWeekIndex = 0;
   if (AppState.currentWeeks.length > 0) {
-    AppState.selectedWeekIndex = 0;
-    weekSelect.value = 0;
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    // 1. Tìm tuần chứa ngày hôm nay
+    const currentWeekIdx = AppState.currentWeeks.findIndex((w) =>
+      w.days && w.days.some((d) => d.dateString === todayStr)
+    );
+
+    if (currentWeekIdx !== -1) {
+      defaultWeekIndex = currentWeekIdx;
+    } else {
+      // 2. Trường hợp hôm nay rơi vào cuối tuần (T7, CN): tìm tuần gần nhất trong tháng
+      const foundIdx = AppState.currentWeeks.findIndex((w) => {
+        if (!w.days || w.days.length === 0) return false;
+        const firstDay = w.days[0].dateString;
+        const lastDay = w.days[w.days.length - 1].dateString;
+        return todayStr >= firstDay && todayStr <= lastDay;
+      });
+      if (foundIdx !== -1) {
+        defaultWeekIndex = foundIdx;
+      }
+    }
+
+    AppState.selectedWeekIndex = defaultWeekIndex;
+    weekSelect.value = defaultWeekIndex;
   }
 
   updateActiveDaysFromSelection();

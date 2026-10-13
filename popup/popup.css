@@ -29,9 +29,15 @@
   padding: 0;
 }
 
-body {
+html, body {
   width: 480px;
-  min-height: 560px;
+  height: 580px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
   font-family: var(--font-family);
   font-size: 13px;
   color: var(--text-main);
@@ -163,7 +169,7 @@ body {
   flex: 1;
   padding: 12px 14px;
   overflow-y: auto;
-  max-height: 520px;
+  overflow-x: hidden;
 }
 
 .tab-pane {
@@ -624,7 +630,16 @@ label {
 }
 
 .action-footer {
+  position: sticky;
+  bottom: -14px;
+  left: 0;
+  right: 0;
+  background-color: #ffffff;
+  padding: 8px 0 4px;
   margin-top: 10px;
+  border-top: 1px solid var(--border-color);
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.05);
+  z-index: 50;
 }
 
 .action-footer-buttons {
