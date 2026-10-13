@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Jira Quick Assistant - Task & Logwork",
+  "version": "1.0.0",
+  "description": "Tự động hóa tạo task định kỳ và logwork hàng loạt hàng tháng trên Jira Server / Data Center.",
+  "permissions": [
+    "storage",
+    "cookies"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
+    },
+    "default_title": "Jira Task & Logwork Assistant"
+  },
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  }
+}
