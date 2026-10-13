@@ -11,7 +11,7 @@
 // State quản lý phiên làm việc của Extension
 const AppState = {
   settings: {
-    jiraBaseUrl: '',
+    jiraBaseUrl: 'https://cntt.vnpt.vn',
     authType: 'cookie',
     personalAccessToken: '',
     defaultTimeSpent: '8h',
@@ -182,6 +182,12 @@ async function loadSettingsFromStorage() {
       chrome.storage.local.get(['jira_settings'], (result) => {
         if (result && result.jira_settings) {
           AppState.settings = { ...AppState.settings, ...result.jira_settings };
+          if (!AppState.settings.jiraBaseUrl) {
+            AppState.settings.jiraBaseUrl = 'https://cntt.vnpt.vn';
+          }
+          applySettingsToUI();
+        } else {
+          AppState.settings.jiraBaseUrl = 'https://cntt.vnpt.vn';
           applySettingsToUI();
         }
         resolve();
@@ -197,7 +203,7 @@ function applySettingsToUI() {
 
   // Settings tab
   const baseUrlInput = document.getElementById('jira-base-url');
-  if (baseUrlInput) baseUrlInput.value = jiraBaseUrl || '';
+  if (baseUrlInput) baseUrlInput.value = jiraBaseUrl || 'https://cntt.vnpt.vn';
 
   const authRadios = document.querySelectorAll('input[name="auth-type"]');
   authRadios.forEach((r) => {
