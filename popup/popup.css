@@ -101,6 +101,13 @@ body {
   color: var(--text-sub);
 }
 
+.app-author {
+  font-size: 10px;
+  color: var(--primary-color);
+  font-weight: 500;
+  margin-top: 1px;
+}
+
 .status-pill {
   display: flex;
   align-items: center;
