@@ -12,6 +12,16 @@ Tiện ích mở rộng (**Chrome Extension Manifest V3**) được tối ưu ri
 
 ---
 
+## 📸 Giao diện trực quan (Screenshots)
+
+<p align="center">
+  <img src="assets/screenshots/tab-logwork.png" width="48%" alt="Tab Logwork - Phân bổ thông minh & Ghim nút hành động" />
+  &nbsp;
+  <img src="assets/screenshots/tab-create-subtasks.png" width="48%" alt="Tab Tạo Sub-task - Sinh mẫu tuần & Nghiệp vụ VNPT" />
+</p>
+
+---
+
 ## 📂 Cấu trúc dự án
 ```
 jira-quick-assistant/
@@ -24,8 +34,10 @@ jira-quick-assistant/
 │   ├── jira-api.js         # Giao tiếp Jira REST API (JQL search, sub-tasks, worklog, XSRF token)
 │   └── date-utils.js       # Phân chia tuần làm việc, bóc tách URL, tính ngày công
 ├── assets/
-│   └── icons/              # Bộ icon 16x16, 48x48, 128x128
+│   ├── icons/              # Bộ icon 16x16, 48x48, 128x128
+│   └── screenshots/        # Ảnh chụp màn hình giao diện thực tế
 ├── .gitignore              # Cấu hình bỏ qua file rác IDE và OS
+├── RELEASE_NOTES.md        # Lịch sử cập nhật và tính năng qua các phiên bản
 └── README.md               # Tài liệu hướng dẫn sử dụng chi tiết
 ```
 
