@@ -514,7 +514,10 @@ async function handleFetchParentSubtasks() {
 
 /**
  * Xây dựng bảng Mapping 1-1 giữa Ngày làm việc ↔ Task tương ứng
- * và áp dụng quy định công ty: Mỗi task tối đa 8 giờ.
+ * Thuật toán thông minh (Smart Sub-task Allocation):
+ * - Bước 1: Quét các ngày đã từng có worklog trên Jira để gán đúng task và đánh dấu Đã log.
+ * - Bước 2: Với các ngày chưa log, tự động tìm sub-task còn trống (< 8h và chưa gán) để gán vào.
+ * - Bước 3: Tuân thủ quy định công ty: Không gán sub-task đã đủ 8h cho ngày mới.
  */
 function buildTaskMappingAndSummary() {
   const skipLogged = document.getElementById('skip-logged-days').checked;
@@ -529,84 +532,162 @@ function buildTaskMappingAndSummary() {
   let toLogDaysCount = 0;
   let alreadyLoggedDaysCount = 0;
 
-  days.forEach((day, index) => {
-    let assignedKey = '';
-    let assignedSummary = '';
-    let existingHours = 0;
-    let isCapped = false;
-    let isAlreadyLoggedOnDate = false;
+  if (AppState.targetMode === 'parent-subtasks') {
+    // -------------------------------------------------------------
+    // CHẾ ĐỘ PHÂN BỔ SUB-TASKS CỦA PARENT ISSUE (THUẬT TOÁN THÔNG MINH)
+    // -------------------------------------------------------------
+    const subtasks = AppState.loadedSubtasks;
+    const usedSubtaskKeys = new Set();
+    const dayAllocations = new Array(days.length).fill(null);
 
-    if (AppState.targetMode === 'parent-subtasks') {
-      // Ghép 1-1 với sub-task thứ index
-      if (index < AppState.loadedSubtasks.length) {
-        const task = AppState.loadedSubtasks[index];
-        assignedKey = task.key;
-        assignedSummary = task.summary;
-        existingHours = task.totalHours;
-        isCapped = task.isAt8hCap;
-        isAlreadyLoggedOnDate = task.loggedDates.has(day.dateString);
-      } else {
-        assignedKey = '(Thiếu Sub-task)';
-        assignedSummary = 'Chưa có sub-task tương ứng cho ngày này';
+    // BƯỚC 1: Quét các ngày đã từng có worklog trên bất kỳ sub-task nào
+    days.forEach((day, dayIndex) => {
+      const matchedLoggedTask = subtasks.find((st) => st.loggedDates && st.loggedDates.has(day.dateString));
+      if (matchedLoggedTask) {
+        dayAllocations[dayIndex] = {
+          task: matchedLoggedTask,
+          isAlreadyLoggedOnDate: true
+        };
+        usedSubtaskKeys.add(matchedLoggedTask.key);
       }
-    } else if (AppState.targetMode === 'single') {
-      assignedKey = document.getElementById('log-issue-key').value.trim().toUpperCase() || '(Chưa nhập)';
-      assignedSummary = 'Task duy nhất';
-    } else if (AppState.targetMode === 'multi-keys') {
-      const lines = document.getElementById('multi-issue-keys').value.split('\n').map((l) => l.trim()).filter(Boolean);
-      if (index < lines.length) {
-        assignedKey = DateUtils.extractIssueKey(lines[index]);
-        assignedSummary = `Task dòng ${index + 1}`;
-      } else {
-        assignedKey = '(Thiếu Key)';
-        assignedSummary = 'Chưa nhập mã task cho ngày này';
-      }
-    }
-
-    // Xác định trạng thái
-    let statusText = '';
-    let badgeClass = '';
-    let shouldSkip = false;
-
-    if (!assignedKey || assignedKey.startsWith('(')) {
-      statusText = 'Chưa gán task';
-      badgeClass = 'badge-skipped';
-      shouldSkip = true;
-    } else if (isCapped) {
-      statusText = `Đã đủ 8h (${existingHours}h)`;
-      badgeClass = 'badge-capped';
-      if (skipLogged) shouldSkip = true;
-      alreadyLoggedDaysCount++;
-    } else if (isAlreadyLoggedOnDate) {
-      statusText = `Đã log ngày này (${existingHours}h)`;
-      badgeClass = 'badge-logged';
-      if (skipLogged) shouldSkip = true;
-      alreadyLoggedDaysCount++;
-    } else {
-      statusText = `Sẵn sàng (${hoursPerDay}h)`;
-      badgeClass = 'badge-ready';
-      toLogDaysCount++;
-    }
-
-    AppState.taskMapping.push({
-      day,
-      issueKey: assignedKey,
-      issueSummary: assignedSummary,
-      status: statusText,
-      hoursToLog: `${hoursPerDay}h`,
-      skip: shouldSkip
     });
 
-    // Render dòng trong bảng
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${day.displayDate}</strong> (${day.dayOfWeek})</td>
-      <td><code>${assignedKey}</code></td>
-      <td>${existingHours > 0 ? existingHours + 'h' : '0h'}</td>
-      <td><span class="badge-status ${badgeClass}">${statusText}</span></td>
-    `;
-    tbody.appendChild(tr);
-  });
+    // BƯỚC 2: Với các ngày còn lại chưa có logwork, tìm sub-task còn trống (< 8h và chưa dùng)
+    days.forEach((day, dayIndex) => {
+      if (!dayAllocations[dayIndex]) {
+        const candidate = subtasks.find((st) => !usedSubtaskKeys.has(st.key) && !st.isAt8hCap && st.totalHours < 8);
+        if (candidate) {
+          dayAllocations[dayIndex] = {
+            task: candidate,
+            isAlreadyLoggedOnDate: false
+          };
+          usedSubtaskKeys.add(candidate.key);
+        } else {
+          dayAllocations[dayIndex] = {
+            task: null,
+            isAlreadyLoggedOnDate: false
+          };
+        }
+      }
+    });
+
+    // BƯỚC 3: Dựng Mapping và Render UI cho từng ngày
+    days.forEach((day, dayIndex) => {
+      const allocation = dayAllocations[dayIndex];
+      const task = allocation ? allocation.task : null;
+      const isAlreadyLoggedOnDate = allocation ? allocation.isAlreadyLoggedOnDate : false;
+
+      let assignedKey = task ? task.key : '';
+      let assignedSummary = task ? task.summary : '';
+      let existingHours = task ? task.totalHours : 0;
+      let statusText = '';
+      let badgeClass = '';
+      let shouldSkip = false;
+
+      if (isAlreadyLoggedOnDate) {
+        statusText = `Đã log ngày này (${existingHours}h)`;
+        badgeClass = 'badge-logged';
+        if (skipLogged) shouldSkip = true;
+        alreadyLoggedDaysCount++;
+      } else if (task) {
+        statusText = `Sẵn sàng (${hoursPerDay}h)`;
+        badgeClass = 'badge-ready';
+        toLogDaysCount++;
+      } else {
+        assignedKey = '(Hết Sub-task trống)';
+        assignedSummary = 'Tất cả sub-task đã đủ 8h hoặc chưa tạo thêm sub-task';
+        statusText = 'Thiếu Sub-task < 8h';
+        badgeClass = 'badge-capped';
+        shouldSkip = true;
+      }
+
+      AppState.taskMapping.push({
+        day,
+        issueKey: assignedKey,
+        issueSummary: assignedSummary,
+        status: statusText,
+        hoursToLog: `${hoursPerDay}h`,
+        skip: shouldSkip
+      });
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${day.displayDate}</strong> (${day.dayOfWeek})</td>
+        <td><code>${assignedKey}</code></td>
+        <td>${existingHours > 0 ? existingHours + 'h' : '0h'}</td>
+        <td><span class="badge-status ${badgeClass}">${statusText}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+  } else {
+    // -------------------------------------------------------------
+    // CHẾ ĐỘ SINGLE TASK HOẶC MULTI-KEYS
+    // -------------------------------------------------------------
+    const multiKeysList = AppState.targetMode === 'multi-keys'
+      ? document.getElementById('multi-issue-keys').value.split('\n').map((l) => l.trim()).filter(Boolean)
+      : [];
+
+    days.forEach((day, index) => {
+      let assignedKey = '';
+      let assignedSummary = '';
+      let existingHours = 0;
+      let isAlreadyLoggedOnDate = false;
+
+      if (AppState.targetMode === 'single') {
+        assignedKey = document.getElementById('log-issue-key').value.trim().toUpperCase() || '(Chưa nhập)';
+        assignedSummary = 'Task duy nhất';
+        if (AppState.currentIssue && AppState.alreadyLoggedDates) {
+          isAlreadyLoggedOnDate = AppState.alreadyLoggedDates.has(day.dateString);
+        }
+      } else if (AppState.targetMode === 'multi-keys') {
+        if (index < multiKeysList.length) {
+          assignedKey = DateUtils.extractIssueKey(multiKeysList[index]);
+          assignedSummary = `Task dòng ${index + 1}`;
+        } else {
+          assignedKey = '(Thiếu Key)';
+          assignedSummary = 'Chưa nhập mã task cho ngày này';
+        }
+      }
+
+      let statusText = '';
+      let badgeClass = '';
+      let shouldSkip = false;
+
+      if (!assignedKey || assignedKey.startsWith('(')) {
+        statusText = 'Chưa gán task';
+        badgeClass = 'badge-skipped';
+        shouldSkip = true;
+      } else if (isAlreadyLoggedOnDate) {
+        statusText = `Đã log ngày này (${existingHours}h)`;
+        badgeClass = 'badge-logged';
+        if (skipLogged) shouldSkip = true;
+        alreadyLoggedDaysCount++;
+      } else {
+        statusText = `Sẵn sàng (${hoursPerDay}h)`;
+        badgeClass = 'badge-ready';
+        toLogDaysCount++;
+      }
+
+      AppState.taskMapping.push({
+        day,
+        issueKey: assignedKey,
+        issueSummary: assignedSummary,
+        status: statusText,
+        hoursToLog: `${hoursPerDay}h`,
+        skip: shouldSkip
+      });
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${day.displayDate}</strong> (${day.dayOfWeek})</td>
+        <td><code>${assignedKey}</code></td>
+        <td>${existingHours > 0 ? existingHours + 'h' : '0h'}</td>
+        <td><span class="badge-status ${badgeClass}">${statusText}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
 
   // Cập nhật thống kê
   const totalDays = days.length;
