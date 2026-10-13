@@ -251,6 +251,43 @@
           <span class="form-hint">Mỗi dòng sẽ tạo ra 1 sub-task tương ứng với 1 ngày làm việc (tối đa 8h/task).</span>
         </div>
 
+        <!-- Cấu hình các trường đặc thù VNPT cho Sub-tasks -->
+        <div class="form-row form-row-2col">
+          <div class="form-group">
+            <label>Mã SPDA:</label>
+            <div class="input-with-history">
+              <input type="text" id="subtask-spda-parent" class="form-control" style="max-width: 70px;" value="SI" placeholder="SI" title="Cấp cha">
+              <input type="text" id="subtask-spda-child" class="form-control" value="Chung/CPCSI" placeholder="Chung/CPCSI" title="Cấp con">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="subtask-cong-doan">Công đoạn: <span class="required">*</span></label>
+            <input type="text" id="subtask-cong-doan" class="form-control" value="Nghiên cứu, phát triển, nâng cấp" placeholder="Nghiên cứu, phát triển, nâng cấp">
+          </div>
+        </div>
+
+        <div class="form-row form-row-2col">
+          <div class="form-group">
+            <label for="subtask-due-date-type">Hạn hoàn thành (Due Date):</label>
+            <select id="subtask-due-date-type" class="form-control">
+              <option value="auto-day">Tự động theo từng ngày làm việc (Khuyên dùng)</option>
+              <option value="custom">Chọn một ngày cụ thể</option>
+            </select>
+          </div>
+          <div id="subtask-custom-due-date-group" class="form-group hidden">
+            <label for="subtask-custom-due-date">Ngày Due Date:</label>
+            <input type="date" id="subtask-custom-due-date" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-check-group" style="margin-top: 4px; margin-bottom: 8px;">
+          <label class="checkbox-container">
+            <input type="checkbox" id="subtask-assignee-me" checked>
+            <span class="checkmark"></span>
+            <span id="subtask-assignee-label">Gán Người thực hiện (Assignee) là tôi</span>
+          </label>
+        </div>
+
         <div id="create-subtasks-progress" class="progress-container hidden">
           <div class="progress-bar-wrapper">
             <div id="subtasks-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
@@ -287,6 +324,34 @@
           <label for="task-summary">Tiêu đề Task: <span class="required">*</span></label>
           <input type="text" id="task-summary" class="form-control" value="[Tháng {month}/{year}] Công việc thường nhật & Vận hành">
           <span class="form-hint">Hỗ trợ biến tự động: <code>{month}</code>, <code>{year}</code></span>
+        </div>
+
+        <div class="form-row form-row-2col">
+          <div class="form-group">
+            <label for="task-due-date">Hạn hoàn thành (Due Date):</label>
+            <input type="date" id="task-due-date" class="form-control">
+          </div>
+          <div class="form-group" style="display:flex; align-items:flex-end;">
+            <label class="checkbox-container" style="margin-bottom:8px;">
+              <input type="checkbox" id="task-assignee-me" checked>
+              <span class="checkmark"></span>
+              <span id="task-assignee-label">Gán Assignee là tôi</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-row form-row-2col">
+          <div class="form-group">
+            <label>Mã SPDA:</label>
+            <div class="input-with-history">
+              <input type="text" id="task-spda-parent" class="form-control" style="max-width: 70px;" value="SI" placeholder="SI" title="Cấp cha">
+              <input type="text" id="task-spda-child" class="form-control" value="Chung/CPCSI" placeholder="Chung/CPCSI" title="Cấp con">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="task-cong-doan">Công đoạn: <span class="required">*</span></label>
+            <input type="text" id="task-cong-doan" class="form-control" value="Nghiên cứu, phát triển, nâng cấp" placeholder="Nghiên cứu, phát triển, nâng cấp">
+          </div>
         </div>
 
         <div class="form-group">

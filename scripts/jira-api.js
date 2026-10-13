@@ -305,29 +305,45 @@ const JiraApi = {
    * @param {Object} authConfig
    * @returns {Promise<{success: boolean, createdKey?: string, data?: Object, error?: string}>}
    */
+  /**
+   * Tạo mới một Task hoặc Issue độc lập trên Jira.
+   * Endpoint: POST /rest/api/2/issue
+   * @param {string} baseUrl
+   * @param {Object} params - { projectKey: string, summary: string, description?: string, issueType?: string, dueDate?: string, assignee?: string, customFields?: Object }
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, createdKey?: string, data?: Object, error?: string}>}
+   */
   async createIssue(baseUrl, params, authConfig = {}) {
     const cleanUrl = this.normalizeBaseUrl(baseUrl);
     const endpoint = `${cleanUrl}/rest/api/2/issue`;
 
-    const body = {
-      fields: {
-        project: {
-          key: (params.projectKey || '').trim().toUpperCase()
-        },
-        summary: (params.summary || '').trim(),
-        description: params.description || 'Task tự động khởi tạo để logwork',
-        issuetype: {
-          name: params.issueType || 'Task'
-        }
+    const fields = {
+      project: {
+        key: (params.projectKey || '').trim().toUpperCase()
+      },
+      summary: (params.summary || '').trim(),
+      description: params.description || 'Task tự động khởi tạo để logwork',
+      issuetype: {
+        name: params.issueType || 'Task'
       }
     };
+
+    if (params.dueDate) {
+      fields.duedate = params.dueDate;
+    }
+    if (params.assignee) {
+      fields.assignee = { name: params.assignee };
+    }
+    if (params.customFields && typeof params.customFields === 'object') {
+      Object.assign(fields, params.customFields);
+    }
 
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: this.buildHeaders(authConfig),
         credentials: 'include',
-        body: JSON.stringify(body)
+        body: JSON.stringify({ fields })
       });
 
       if (!response.ok) {
@@ -348,10 +364,10 @@ const JiraApi = {
 
   /**
    * Tạo mới một Sub-task gắn với một Task cha (Parent Issue).
-   * Thử nghiệm với issueType 'Sub-task' trước, nếu lỗi loại issue sẽ thử 'Subtask'.
+   * Hỗ trợ đầy đủ due date, assignee, Mã SPDA và Công đoạn.
    *
    * @param {string} baseUrl
-   * @param {Object} params - { parentKey: string, projectKey: string, summary: string, description?: string }
+   * @param {Object} params - { parentKey: string, projectKey?: string, summary: string, description?: string, dueDate?: string, assignee?: string, customFields?: Object }
    * @param {Object} authConfig
    * @returns {Promise<{success: boolean, createdKey?: string, error?: string}>}
    */
@@ -362,15 +378,27 @@ const JiraApi = {
     const parentKey = (params.parentKey || '').trim().toUpperCase();
     const projectKey = (params.projectKey || parentKey.split('-')[0] || '').trim().toUpperCase();
 
-    const makeBody = (typeName) => ({
-      fields: {
+    const makeBody = (typeName) => {
+      const fields = {
         project: { key: projectKey },
         parent: { key: parentKey },
         summary: (params.summary || '').trim(),
         description: params.description || 'Sub-task thực hiện công việc',
         issuetype: { name: typeName }
+      };
+
+      if (params.dueDate) {
+        fields.duedate = params.dueDate;
       }
-    });
+      if (params.assignee) {
+        fields.assignee = { name: params.assignee };
+      }
+      if (params.customFields && typeof params.customFields === 'object') {
+        Object.assign(fields, params.customFields);
+      }
+
+      return { fields };
+    };
 
     try {
       // Thử với tên chuẩn 'Sub-task'
@@ -402,6 +430,138 @@ const JiraApi = {
 
       const data = await response.json();
       return { success: true, createdKey: data.key };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Tự động dò tìm các trường SPDA và Công đoạn từ một Issue cha hoặc Task đã tồn tại trên Jira.
+   * Endpoint: GET /rest/api/2/issue/{issueKey}
+   *
+   * @param {string} baseUrl
+   * @param {string} issueKey
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, spda?: Object, congDoan?: Object, customFields?: Object, error?: string}>}
+   */
+  async detectCustomFieldsFromIssue(baseUrl, issueKey, authConfig = {}) {
+    const cleanUrl = this.normalizeBaseUrl(baseUrl);
+    const key = (issueKey || '').trim().toUpperCase();
+
+    if (!cleanUrl || !key) {
+      return { success: false, error: 'Thiếu Jira URL hoặc Issue Key' };
+    }
+
+    const endpoint = `${cleanUrl}/rest/api/2/issue/${key}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorMsg = await this.parseErrorMessage(response);
+        return { success: false, error: errorMsg };
+      }
+
+      const data = await response.json();
+      const fields = data.fields || {};
+      let spda = null;
+      let congDoan = null;
+      const customFields = {};
+
+      for (const [fKey, val] of Object.entries(fields)) {
+        if (!fKey.startsWith('customfield_') || !val) continue;
+
+        const valStr = JSON.stringify(val);
+
+        // Nhận diện trường Mã SPDA (chứa SI hoặc CPCSI)
+        if (!spda && (val.value === 'SI' || valStr.includes('CPCSI') || valStr.includes('Chung/CPCSI'))) {
+          spda = { key: fKey, value: val };
+          customFields[fKey] = val;
+        }
+
+        // Nhận diện trường Công đoạn (chứa Nghiên cứu, phát triển)
+        if (!congDoan && (valStr.includes('Nghiên cứu') || valStr.includes('phát triển') || valStr.includes('nâng cấp'))) {
+          congDoan = { key: fKey, value: val };
+          customFields[fKey] = val;
+        }
+      }
+
+      return {
+        success: true,
+        spda,
+        congDoan,
+        customFields
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Truy vấn CreateMeta để tự động dò tìm ID trường tùy biến (customfield_xxxxx)
+   * cho "Mã SPDA" và "Công đoạn", cùng danh sách các giá trị hợp lệ.
+   * Endpoint: GET /rest/api/2/issue/createmeta?projectKeys={projectKey}&expand=projects.issuetypes.fields
+   *
+   * @param {string} baseUrl
+   * @param {string} projectKey
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, spdaField?: Object, congDoanField?: Object, error?: string}>}
+   */
+  async getCreateMeta(baseUrl, projectKey, authConfig = {}) {
+    const cleanUrl = this.normalizeBaseUrl(baseUrl);
+    const pKey = (projectKey || '').trim().toUpperCase();
+
+    if (!cleanUrl || !pKey) {
+      return { success: false, error: 'Thiếu Jira URL hoặc Project Key' };
+    }
+
+    const endpoint = `${cleanUrl}/rest/api/2/issue/createmeta?projectKeys=${pKey}&expand=projects.issuetypes.fields`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorMsg = await this.parseErrorMessage(response);
+        return { success: false, error: errorMsg };
+      }
+
+      const data = await response.json();
+      const project = (data.projects || []).find((p) => p.key === pKey) || data.projects?.[0];
+      if (!project) {
+        return { success: false, error: `Không tìm thấy dự án ${pKey}` };
+      }
+
+      const issueType = project.issuetypes?.find((it) => it.name === 'Task' || it.name === 'Sub-task') || project.issuetypes?.[0];
+      const fields = issueType?.fields || {};
+
+      let spdaField = null;
+      let congDoanField = null;
+
+      const spdaRegex = /(mã\s*spda|mã\s*spdv|spda|spdv)/i;
+      const congDoanRegex = /(công\s*đoạn|stage)/i;
+
+      for (const [key, field] of Object.entries(fields)) {
+        if (!spdaField && spdaRegex.test(field.name)) {
+          spdaField = { key, name: field.name, allowedValues: field.allowedValues || [] };
+        }
+        if (!congDoanField && congDoanRegex.test(field.name)) {
+          congDoanField = { key, name: field.name, allowedValues: field.allowedValues || [] };
+        }
+      }
+
+      return {
+        success: true,
+        spdaField,
+        congDoanField
+      };
     } catch (err) {
       return { success: false, error: err.message };
     }

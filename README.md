@@ -47,9 +47,14 @@ lucid-planck/
    https://cntt.vnpt.vn/browse/DOFFICE-3880
    ```
    *(Extension sẽ tự động lấy mã `DOFFICE-3880`)*.
-3. Bấm nút **⚡ Sinh 5 Sub-task theo tuần**: Hệ thống sẽ tự động điền danh sách 5 sub-tasks tương ứng với Thứ 2 đến Thứ 6 trong tuần (bạn có thể chỉnh sửa lại tiêu đề tùy ý).
-4. Bấm **🚀 Bắt Đầu Tạo Danh Sách Sub-task**: Các sub-tasks sẽ được khởi tạo tuần tự trên Jira.
-5. Sau khi tạo xong, bấm nút **👉 Chuyển sang Tab Logwork cho Task Cha này ngay**.
+3. Bấm nút **⚡ Sinh 5 Sub-task theo tuần**: Hệ thống sẽ tự động điền danh sách 5 sub-tasks tương ứng với Thứ 2 đến Thứ 6 trong tuần.
+4. Kiểm tra các thông số mẫu đặc thù của Jira VNPT:
+   - **Mã SPDA**: Mặc định `SI` - `Chung/CPCSI` (tự động nhận diện từ task cha nếu có).
+   - **Công đoạn**: Mặc định `Nghiên cứu, phát triển, nâng cấp`.
+   - **Due Date**: Mặc định `Tự động theo từng ngày làm việc` (Thứ 2 hạn Thứ 2, Thứ 3 hạn Thứ 3...).
+   - **Assignee**: Mặc định gán cho chính bạn (`cuongvmit4`).
+5. Bấm **🚀 Bắt Đầu Tạo Danh Sách Sub-task**: Các sub-tasks sẽ được khởi tạo tuần tự với đầy đủ Due Date, Assignee và Custom Fields.
+6. Sau khi tạo xong, bấm nút **👉 Chuyển sang Tab Logwork cho Task Cha này ngay**.
 
 ---
 

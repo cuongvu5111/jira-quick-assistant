@@ -279,6 +279,11 @@ async function checkInitialConnection() {
     statusPill.className = 'status-pill status-connected';
     statusText.textContent = res.user.displayName || res.user.name;
     statusPill.title = `Đã kết nối với Jira: ${res.user.displayName} (${res.user.name})`;
+
+    const subtaskAssigneeLabel = document.getElementById('subtask-assignee-label');
+    if (subtaskAssigneeLabel) subtaskAssigneeLabel.textContent = `Gán Người thực hiện (Assignee) là tôi (${res.user.displayName || res.user.name})`;
+    const taskAssigneeLabel = document.getElementById('task-assignee-label');
+    if (taskAssigneeLabel) taskAssigneeLabel.textContent = `Gán Assignee là tôi (${res.user.displayName || res.user.name})`;
   } else {
     statusPill.className = 'status-pill status-disconnected';
     statusText.textContent = 'Chưa đăng nhập';
@@ -377,6 +382,39 @@ function initEventHandlers() {
     const cleanKey = DateUtils.extractIssueKey(e.target.value);
     if (cleanKey !== e.target.value) e.target.value = cleanKey;
   });
+  createParentInput.addEventListener('blur', async (e) => {
+    const key = e.target.value.trim();
+    if (key && AppState.settings.jiraBaseUrl) {
+      const authConfig = {
+        authType: AppState.settings.authType,
+        personalAccessToken: AppState.settings.personalAccessToken
+      };
+      const detected = await JiraApi.detectCustomFieldsFromIssue(AppState.settings.jiraBaseUrl, key, authConfig);
+      if (detected.success) {
+        if (detected.spda?.value?.value) {
+          document.getElementById('subtask-spda-parent').value = detected.spda.value.value;
+        }
+        if (detected.spda?.value?.child?.value) {
+          document.getElementById('subtask-spda-child').value = detected.spda.value.child.value;
+        }
+        if (detected.congDoan?.value?.value) {
+          document.getElementById('subtask-cong-doan').value = detected.congDoan.value.value;
+        }
+      }
+    }
+  });
+
+  // Tab 2: Chuyển đổi loại Due Date của Sub-tasks
+  const dueDateTypeSelect = document.getElementById('subtask-due-date-type');
+  if (dueDateTypeSelect) {
+    dueDateTypeSelect.addEventListener('change', (e) => {
+      const customGroup = document.getElementById('subtask-custom-due-date-group');
+      if (customGroup) {
+        if (e.target.value === 'custom') customGroup.classList.remove('hidden');
+        else customGroup.classList.add('hidden');
+      }
+    });
+  }
 
   // Tab 2: Nút sinh mẫu 5 Sub-tasks theo tuần
   document.getElementById('btn-gen-week-subtasks').addEventListener('click', generateWeekSubtasksTemplate);
@@ -948,6 +986,43 @@ async function handleBatchCreateSubtasks() {
   const createdKeys = [];
   const errors = [];
 
+  // Lấy thông tin bổ sung: SPDA, Công đoạn, Due Date, Assignee
+  const spdaParent = document.getElementById('subtask-spda-parent')?.value.trim() || 'SI';
+  const spdaChild = document.getElementById('subtask-spda-child')?.value.trim() || 'Chung/CPCSI';
+  const congDoan = document.getElementById('subtask-cong-doan')?.value.trim() || 'Nghiên cứu, phát triển, nâng cấp';
+  const dueDateType = document.getElementById('subtask-due-date-type')?.value || 'auto-day';
+  const customDueDate = document.getElementById('subtask-custom-due-date')?.value || '';
+  const assignMe = document.getElementById('subtask-assignee-me')?.checked;
+  const assigneeName = (assignMe && AppState.currentUser?.name) ? AppState.currentUser.name : undefined;
+
+  // Dò tìm customfield IDs từ parent task hoặc createmeta
+  let customFieldsPayload = {};
+  const detected = await JiraApi.detectCustomFieldsFromIssue(jiraBaseUrl, parentKey, authConfig);
+  if (detected.success) {
+    if (detected.spda?.key) {
+      customFieldsPayload[detected.spda.key] = { value: spdaParent, child: { value: spdaChild } };
+    }
+    if (detected.congDoan?.key) {
+      customFieldsPayload[detected.congDoan.key] = { value: congDoan };
+    }
+  }
+
+  // Nếu chưa dò được qua issue, thử qua createmeta
+  if (Object.keys(customFieldsPayload).length === 0) {
+    const meta = await JiraApi.getCreateMeta(jiraBaseUrl, projectKey, authConfig);
+    if (meta.success) {
+      if (meta.spdaField?.key) {
+        customFieldsPayload[meta.spdaField.key] = { value: spdaParent, child: { value: spdaChild } };
+      }
+      if (meta.congDoanField?.key) {
+        customFieldsPayload[meta.congDoanField.key] = { value: congDoan };
+      }
+    }
+  }
+
+  // Lấy danh sách ngày công đang active (để gán due date tự động theo ngày)
+  const workingDays = AppState.activeWorkingDays || [];
+
   for (let i = 0; i < textLines.length; i++) {
     const summary = textLines[i];
     const currentIndex = i + 1;
@@ -956,11 +1031,24 @@ async function handleBatchCreateSubtasks() {
     progressText.textContent = `Đang tạo: "${summary}" (${currentIndex}/${textLines.length})...`;
     progressFill.style.width = `${percent}%`;
 
+    // Tính due date cho sub-task này
+    let taskDueDate = undefined;
+    if (dueDateType === 'auto-day') {
+      if (i < workingDays.length) {
+        taskDueDate = workingDays[i].dateString; // YYYY-MM-DD
+      }
+    } else if (customDueDate) {
+      taskDueDate = customDueDate;
+    }
+
     const res = await JiraApi.createSubtask(jiraBaseUrl, {
       parentKey,
       projectKey,
       summary,
-      description: `Sub-task tự động tạo cho ngày làm việc (mỗi task log tối đa 8h)`
+      description: `Sub-task tự động tạo cho ngày làm việc (mỗi task log tối đa 8h)`,
+      dueDate: taskDueDate,
+      assignee: assigneeName,
+      customFields: customFieldsPayload
     }, authConfig);
 
     if (res.success && res.createdKey) {
@@ -1030,6 +1118,14 @@ async function handleCreateSingleTask() {
   const summary = rawSummary.replace(/{month}/gi, month).replace(/{year}/gi, year);
   const description = rawDesc.replace(/{month}/gi, month).replace(/{year}/gi, year);
 
+  // Lấy thêm Due Date, Assignee, SPDA, Công đoạn
+  const dueDate = document.getElementById('task-due-date')?.value || undefined;
+  const assignMe = document.getElementById('task-assignee-me')?.checked;
+  const assigneeName = (assignMe && AppState.currentUser?.name) ? AppState.currentUser.name : undefined;
+  const spdaParent = document.getElementById('task-spda-parent')?.value.trim() || 'SI';
+  const spdaChild = document.getElementById('task-spda-child')?.value.trim() || 'Chung/CPCSI';
+  const congDoan = document.getElementById('task-cong-doan')?.value.trim() || 'Nghiên cứu, phát triển, nâng cấp';
+
   const btn = document.getElementById('btn-create-single-task');
   const resultBox = document.getElementById('create-task-result');
 
@@ -1042,11 +1138,25 @@ async function handleCreateSingleTask() {
     personalAccessToken: AppState.settings.personalAccessToken
   };
 
+  let customFieldsPayload = {};
+  const meta = await JiraApi.getCreateMeta(jiraBaseUrl, projectKey, authConfig);
+  if (meta.success) {
+    if (meta.spdaField?.key) {
+      customFieldsPayload[meta.spdaField.key] = { value: spdaParent, child: { value: spdaChild } };
+    }
+    if (meta.congDoanField?.key) {
+      customFieldsPayload[meta.congDoanField.key] = { value: congDoan };
+    }
+  }
+
   const res = await JiraApi.createIssue(jiraBaseUrl, {
     projectKey,
     summary,
     description,
-    issueType
+    issueType,
+    dueDate,
+    assignee: assigneeName,
+    customFields: customFieldsPayload
   }, authConfig);
 
   btn.disabled = false;
