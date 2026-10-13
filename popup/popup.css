@@ -1,7 +1,7 @@
 /**
- * Ngày tạo: 13/10/2026
- * Mục đích: Định dạng CSS cho giao diện Extension Popup theo phong cách Atlassian Design System.
- *           Đảm bảo tính trực quan, độ tương phản cao và trải nghiệm người dùng mượt mà.
+ * Ngày tạo: 13/10/2026 (Cập nhật phiên bản 2.0)
+ * Mục đích: Định dạng CSS cho giao diện Extension Popup V2: Hỗ trợ segmented control,
+ *           radio cards, bảng mapping ngày công ↔ task và các huy hiệu trạng thái.
  */
 
 :root {
@@ -30,8 +30,8 @@
 }
 
 body {
-  width: 440px;
-  min-height: 520px;
+  width: 480px;
+  min-height: 560px;
   font-family: var(--font-family);
   font-size: 13px;
   color: var(--text-main);
@@ -46,7 +46,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background-color: var(--bg-color);
   border-bottom: 1px solid var(--border-color);
 }
@@ -54,18 +54,40 @@ body {
 .logo-group {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .app-logo {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
 }
 
 .app-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-v2 {
+  font-size: 10px;
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.badge-rule {
+  font-size: 10px;
+  background-color: #ffebe6;
+  color: #bf2600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .app-subtitle {
@@ -76,7 +98,7 @@ body {
 .status-pill {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   padding: 4px 8px;
   border-radius: 12px;
   font-size: 11px;
@@ -94,8 +116,8 @@ body {
 }
 
 .status-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background-color: currentColor;
 }
@@ -110,7 +132,7 @@ body {
 
 .tab-btn {
   flex: 1;
-  padding: 10px 8px;
+  padding: 9px 6px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -139,9 +161,9 @@ body {
 /* Main Content */
 .tab-content-container {
   flex: 1;
-  padding: 14px 16px;
+  padding: 12px 14px;
   overflow-y: auto;
-  max-height: 480px;
+  max-height: 520px;
 }
 
 .tab-pane {
@@ -152,14 +174,91 @@ body {
   display: block;
 }
 
+/* Segmented Control Switcher */
+.segmented-control {
+  display: flex;
+  background-color: var(--bg-subtle);
+  border-radius: var(--radius);
+  padding: 2px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.segment-btn {
+  flex: 1;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.segment-btn:hover {
+  color: var(--text-main);
+}
+
+.segment-btn.active {
+  background-color: #ffffff;
+  color: var(--primary-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Radio Cards */
+.radio-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  cursor: pointer;
+  background-color: #fafbfc;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.radio-card:hover {
+  border-color: var(--primary-color);
+}
+
+.radio-card input[type="radio"] {
+  margin-top: 3px;
+}
+
+.radio-card-content {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.radio-card-content strong {
+  color: var(--text-main);
+}
+
+.radio-card-content span {
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
 /* Form Styles */
 .form-group {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .form-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .form-row-2col .form-group {
@@ -168,7 +267,7 @@ body {
 
 label {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   margin-bottom: 4px;
   color: var(--text-main);
@@ -191,11 +290,11 @@ label {
 
 .form-control {
   width: 100%;
-  padding: 7px 10px;
+  padding: 6px 9px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-main);
   background-color: #fafbfc;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -212,14 +311,7 @@ label {
   display: block;
   font-size: 11px;
   color: var(--text-sub);
-  margin-top: 3px;
-}
-
-.form-hint code {
-  background: var(--bg-subtle);
-  padding: 1px 4px;
-  border-radius: 3px;
-  color: var(--primary-color);
+  margin-top: 2px;
 }
 
 .input-with-history {
@@ -231,26 +323,49 @@ label {
   max-width: 130px;
 }
 
-/* Checkbox & Radio */
-.form-check-group {
-  margin: 10px 0 12px;
-}
-
-.checkbox-container, .radio-container {
+/* Quick Template Bar & Chips */
+.quick-template-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-main);
-  cursor: pointer;
-  user-select: none;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
-.radio-group {
+.quick-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.btn-chip {
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  border: none;
+  border-radius: 12px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-chip:hover {
+  background-color: #c0dcff;
+}
+
+/* Checkbox */
+.form-check-group {
+  margin: 8px 0 10px;
+}
+
+.checkbox-container {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-main);
+  cursor: pointer;
 }
 
 /* Summary Card */
@@ -258,40 +373,40 @@ label {
   background-color: var(--bg-subtle);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
-  padding: 10px 12px;
-  margin-bottom: 14px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
 }
 
 .summary-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .summary-title {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .summary-stats {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   text-align: center;
 }
 
 .stat-item {
   flex: 1;
   background: #ffffff;
-  padding: 6px 4px;
+  padding: 5px 3px;
   border-radius: 4px;
   border: 1px solid #ebecf0;
 }
 
 .stat-val {
   display: block;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-main);
 }
@@ -305,58 +420,63 @@ label {
 .stat-success { color: var(--success-color); }
 .stat-primary { color: var(--primary-color); }
 
-/* Days Preview Collapsible */
+/* Mapping Table (1-1 Ngày <-> Task) */
 .days-preview-container {
-  margin-top: 10px;
+  margin-top: 8px;
   border-top: 1px solid var(--border-color);
-  padding-top: 8px;
-  max-height: 140px;
+  padding-top: 6px;
+  max-height: 160px;
   overflow-y: auto;
 }
 
-.days-preview-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.day-preview-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 6px;
-  background: #ffffff;
-  border-radius: 4px;
+.mapping-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 11px;
 }
 
-.day-status-tag {
+.mapping-table th {
+  text-align: left;
+  background-color: #ebecf0;
+  padding: 4px 6px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.mapping-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #f0f0f0;
+  background-color: #ffffff;
+}
+
+.badge-status {
+  display: inline-block;
   font-size: 10px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 3px;
   font-weight: 600;
 }
 
-.tag-ready { background-color: var(--primary-light); color: var(--primary-color); }
-.tag-logged { background-color: var(--warning-bg); color: #974f00; }
-.tag-skipped { background-color: var(--bg-subtle); color: var(--text-sub); }
+.badge-ready { background-color: var(--success-bg); color: #006644; }
+.badge-capped { background-color: var(--danger-bg); color: #bf2600; }
+.badge-logged { background-color: var(--warning-bg); color: #974f00; }
+.badge-skipped { background-color: var(--bg-subtle); color: var(--text-sub); }
 
 /* Progress Area */
 .progress-container {
   background: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
-  padding: 10px;
-  margin-bottom: 12px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
 }
 
 .progress-bar-wrapper {
-  height: 8px;
+  height: 6px;
   background-color: #ebecf0;
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .progress-bar-fill {
@@ -374,13 +494,13 @@ label {
 }
 
 .log-console {
-  margin-top: 8px;
+  margin-top: 6px;
   padding: 6px 8px;
   background-color: #172b4d;
   color: #f4f5f7;
   font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 11px;
-  max-height: 90px;
+  font-size: 10px;
+  max-height: 80px;
   overflow-y: auto;
   border-radius: 4px;
   line-height: 1.4;
@@ -391,11 +511,11 @@ label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 14px;
+  gap: 5px;
+  padding: 7px 12px;
   border-radius: var(--radius);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   border: none;
@@ -444,25 +564,25 @@ label {
 }
 
 .action-footer {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .action-footer-buttons {
   display: flex;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .action-footer-buttons .btn {
   flex: 1;
 }
 
-/* Alert Boxes & Badges */
+/* Alerts */
 .alert-box {
-  padding: 8px 10px;
+  padding: 6px 9px;
   border-radius: var(--radius);
-  font-size: 12px;
-  margin-bottom: 12px;
+  font-size: 11px;
+  margin-bottom: 10px;
 }
 
 .alert-warning {
@@ -483,19 +603,9 @@ label {
   color: #bf2600;
 }
 
-.instruction-box {
-  background-color: var(--primary-light);
-  border-left: 3px solid var(--primary-color);
-  padding: 8px 10px;
-  font-size: 12px;
-  color: #0747a6;
-  border-radius: 0 var(--radius) var(--radius) 0;
-  margin-bottom: 14px;
-}
-
 .info-badge {
   margin-top: 4px;
-  padding: 4px 8px;
+  padding: 4px 7px;
   font-size: 11px;
   border-radius: 4px;
   background: var(--bg-subtle);

@@ -1,7 +1,7 @@
 /**
- * Ngày tạo: 13/10/2026
- * Mục đích: Cung cấp các tiện ích xử lý ngày tháng, tính toán ngày làm việc (working days)
- *           trong tháng, loại trừ cuối tuần, ngày lễ và format chuẩn Jira REST API.
+ * Ngày tạo: 13/10/2026 (Cập nhật phiên bản 2.0: Bổ sung chia tuần và trích xuất URL)
+ * Mục đích: Cung cấp các tiện ích xử lý ngày tháng, tính toán ngày làm việc trong tháng,
+ *           chia tuần làm việc, loại trừ cuối tuần, ngày lễ và format chuẩn Jira REST API.
  */
 
 const DateUtils = {
@@ -12,8 +12,6 @@ const DateUtils = {
    * @returns {number} Số ngày trong tháng (28 - 31)
    */
   getDaysInMonth(year, month) {
-    // Tháng trong JS Date bắt đầu từ 0 (0: Tháng 1, 11: Tháng 12).
-    // Đặt ngày = 0 của tháng tiếp theo sẽ trả về ngày cuối cùng của tháng cần tính.
     return new Date(year, month, 0).getDate();
   },
 
@@ -24,7 +22,6 @@ const DateUtils = {
    */
   isWeekend(date) {
     const day = date.getDay();
-    // 0 là Chủ Nhật (Sunday), 6 là Thứ Bảy (Saturday)
     return day === 0 || day === 6;
   },
 
@@ -72,28 +69,35 @@ const DateUtils = {
   },
 
   /**
-   * Phân tích chuỗi danh sách ngày nghỉ (người dùng nhập cách nhau bởi dấu phẩy, khoảng trắng hoặc xuống dòng)
-   * sang tập hợp Set các chuỗi ngày chuẩn 'YYYY-MM-DD' để tra cứu nhanh O(1).
-   * @param {string} text - Chuỗi chứa các ngày (hỗ trợ định dạng YYYY-MM-DD hoặc DD/MM/YYYY)
+   * Định dạng ngày thành 'DD/MM' ngắn gọn cho nhãn tuần.
+   * @param {Date} date
+   * @returns {string}
+   */
+  formatDateDM(date) {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return `${day}/${month}`;
+  },
+
+  /**
+   * Phân tích chuỗi danh sách ngày nghỉ (người dùng nhập cách nhau bởi dấu phẩy hoặc xuống dòng).
+   * @param {string} text - Chuỗi chứa các ngày (hỗ trợ YYYY-MM-DD hoặc DD/MM/YYYY)
    * @returns {Set<string>}
    */
   parseExcludedDates(text) {
     const result = new Set();
     if (!text || typeof text !== 'string') return result;
 
-    // Tách theo dấu phẩy, dấu chấm phẩy hoặc xuống dòng
     const parts = text.split(/[\n,;]+/);
     for (const part of parts) {
       const clean = part.trim();
       if (!clean) continue;
 
-      // Hỗ trợ dạng YYYY-MM-DD
       if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
         result.add(clean);
         continue;
       }
 
-      // Hỗ trợ dạng DD/MM/YYYY hoặc DD-MM-YYYY
       const dmyMatch = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
       if (dmyMatch) {
         const day = dmyMatch[1].padStart(2, '0');
@@ -112,7 +116,7 @@ const DateUtils = {
    *
    * @param {number} year - Năm (vd: 2026)
    * @param {number} month - Tháng từ 1 đến 12
-   * @param {Set<string>|Array<string>} excludedDates - Tập hợp các ngày YYYY-MM-DD cần loại trừ
+   * @param {Set<string>|Array<string>} excludedDates
    * @returns {Array<{dateObj: Date, dateString: string, displayDate: string, dayOfWeek: string}>}
    */
   getWorkingDaysOfMonth(year, month, excludedDates = new Set()) {
@@ -124,15 +128,8 @@ const DateUtils = {
       const date = new Date(year, month - 1, day);
       const ymd = this.formatDateYMD(date);
 
-      // Bỏ qua cuối tuần
-      if (this.isWeekend(date)) {
-        continue;
-      }
-
-      // Bỏ qua ngày nghỉ phép / lễ
-      if (excludedSet.has(ymd)) {
-        continue;
-      }
+      if (this.isWeekend(date)) continue;
+      if (excludedSet.has(ymd)) continue;
 
       workingDays.push({
         dateObj: date,
@@ -143,6 +140,61 @@ const DateUtils = {
     }
 
     return workingDays;
+  },
+
+  /**
+   * Phân chia các ngày làm việc trong tháng thành các tuần làm việc thực tế (Tuần 1, 2, 3, 4, 5).
+   * Mỗi tuần kết thúc vào Chủ Nhật (hoặc Thứ 6 đối với ngày làm việc).
+   *
+   * @param {number} year - Năm (vd: 2026)
+   * @param {number} month - Tháng từ 1 đến 12
+   * @param {Set<string>|Array<string>} excludedDates
+   * @returns {Array<{weekNumber: number, label: string, days: Array}>}
+   */
+  getWeeksOfMonth(year, month, excludedDates = new Set()) {
+    const totalDays = this.getDaysInMonth(year, month);
+    const excludedSet = excludedDates instanceof Set ? excludedDates : new Set(excludedDates);
+    const weeks = [];
+
+    let currentWeekDays = [];
+    let weekIndex = 1;
+
+    for (let day = 1; day <= totalDays; day++) {
+      const date = new Date(year, month - 1, day);
+      const dayOfWeek = date.getDay(); // 0 là Chủ Nhật, 1..6 là T2..T7
+      const ymd = this.formatDateYMD(date);
+
+      // Nếu là ngày làm việc (không phải T7, CN và không phải ngày nghỉ lễ)
+      if (!this.isWeekend(date) && !excludedSet.has(ymd)) {
+        currentWeekDays.push({
+          dateObj: date,
+          dateString: ymd,
+          displayDate: this.formatDateDMY(date),
+          dayOfWeek: this.getDayNameVi(date)
+        });
+      }
+
+      // Khi kết thúc tuần (Chủ Nhật, dayOfWeek === 0) hoặc là ngày cuối cùng của tháng
+      if (dayOfWeek === 0 || day === totalDays) {
+        if (currentWeekDays.length > 0) {
+          const firstDay = currentWeekDays[0];
+          const lastDay = currentWeekDays[currentWeekDays.length - 1];
+          const startLabel = this.formatDateDM(firstDay.dateObj);
+          const endLabel = this.formatDateDM(lastDay.dateObj);
+
+          weeks.push({
+            weekNumber: weekIndex,
+            label: `Tuần ${weekIndex} (${startLabel} - ${endLabel}) [${currentWeekDays.length} ngày]`,
+            days: [...currentWeekDays]
+          });
+
+          weekIndex++;
+          currentWeekDays = [];
+        }
+      }
+    }
+
+    return weeks;
   },
 
   /**
@@ -159,7 +211,6 @@ const DateUtils = {
 
     const d = new Date(year, month - 1, day, hours, minutes, 0, 0);
 
-    // Tính offset timezone địa phương (getTimezoneOffset trả về số phút lệch so với UTC, ngược dấu)
     const offsetMinutes = -d.getTimezoneOffset();
     const sign = offsetMinutes >= 0 ? '+' : '-';
     const absOffset = Math.abs(offsetMinutes);
@@ -172,6 +223,42 @@ const DateUtils = {
     const isoTime = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.000`;
 
     return `${isoDate}T${isoTime}${tzString}`;
+  },
+
+  /**
+   * Tiện ích bóc tách mã Issue Key từ input của người dùng.
+   * Hỗ trợ tự động trích xuất nếu người dùng dán nguyên đường dẫn web Jira:
+   * Ví dụ: 'https://cntt.vnpt.vn/browse/DOFFICE-3880' -> 'DOFFICE-3880'
+   * @param {string} input
+   * @returns {string} Mã Issue Key in hoa chuẩn
+   */
+  extractIssueKey(input) {
+    if (!input || typeof input !== 'string') return '';
+    const trimmed = input.trim();
+
+    // Tìm mẫu /browse/KEY-123 hoặc tiền tố KEY-123
+    const match = trimmed.match(/(?:browse\/|^)([A-Za-z0-9_]+-\d+)/i);
+    if (match) {
+      return match[1].toUpperCase();
+    }
+    return trimmed.toUpperCase();
+  },
+
+  /**
+   * Tiện ích bóc tách Jira Base URL từ input của người dùng.
+   * Ví dụ: 'https://cntt.vnpt.vn/browse/DOFFICE-3880' -> 'https://cntt.vnpt.vn'
+   * @param {string} input
+   * @returns {string}
+   */
+  extractBaseUrl(input) {
+    if (!input || typeof input !== 'string') return '';
+    const trimmed = input.trim();
+
+    const match = trimmed.match(/^(https?:\/\/[^\/]+)/i);
+    if (match) {
+      return match[1];
+    }
+    return trimmed.replace(/\/+$/, '');
   }
 };
 

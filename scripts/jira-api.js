@@ -1,13 +1,13 @@
 /**
- * Ngày tạo: 13/10/2026
- * Mục đích: Đóng gói toàn bộ các hàm gọi Jira REST API (v2) tương thích với Jira Server và Data Center.
- *           Xử lý xác thực qua Session Cookie (trình duyệt) hoặc Personal Access Token (PAT),
- *           tự động gắn header chống XSRF (X-Atlassian-Token: no-check).
+ * Ngày tạo: 13/10/2026 (Cập nhật phiên bản 2.0)
+ * Mục đích: Đóng gói các hàm gọi Jira REST API (v2) tương thích với Jira Server và Data Center.
+ *           Bổ sung: Lấy danh sách sub-tasks, kiểm tra tổng giờ đã log của từng issue,
+ *           tạo hàng loạt sub-task cho task cha và kiểm soát ràng buộc tối đa 8h/task.
  */
 
 const JiraApi = {
   /**
-   * Chuẩn hóa URL gốc của Jira (loại bỏ dấu gạch chéo cuối nếu có).
+   * Chuẩn hóa URL gốc của Jira.
    * @param {string} url
    * @returns {string}
    */
@@ -18,7 +18,7 @@ const JiraApi = {
 
   /**
    * Xây dựng headers chuẩn cho mọi request gửi tới Jira Server / Data Center.
-   * Header 'X-Atlassian-Token: no-check' là bắt buộc đối với Jira Server để tránh lỗi 403 XSRF Check Failed.
+   * Header 'X-Atlassian-Token: no-check' là bắt buộc đối với Jira Server để tránh lỗi 403 XSRF.
    * @param {Object} authConfig - { authType: 'cookie'|'token', personalAccessToken?: string }
    * @returns {HeadersInit}
    */
@@ -38,7 +38,6 @@ const JiraApi = {
 
   /**
    * Trích xuất thông báo lỗi rõ ràng từ phản hồi lỗi của Jira REST API.
-   * Jira thường trả về JSON có cấu trúc { errorMessages: [], errors: {} }.
    * @param {Response} response
    * @returns {Promise<string>}
    */
@@ -73,7 +72,7 @@ const JiraApi = {
         return messages.join(' | ');
       }
     } catch {
-      // Nếu không parse được JSON, trả về statusText
+      // Bỏ qua lỗi parse
     }
 
     return `Lỗi HTTP ${status}: ${response.statusText || 'Không xác định'}`;
@@ -98,7 +97,7 @@ const JiraApi = {
       const response = await fetch(endpoint, {
         method: 'GET',
         headers: this.buildHeaders(authConfig),
-        credentials: 'include' // Luôn đính kèm cookie của trình duyệt
+        credentials: 'include'
       });
 
       if (!response.ok) {
@@ -125,14 +124,14 @@ const JiraApi = {
   },
 
   /**
-   * Lấy thông tin cơ bản của một Issue để xác thực sự tồn tại và xem tên task.
-   * Endpoint: GET /rest/api/2/issue/{issueKey}?fields=summary,status,issuetype
+   * Lấy thông tin cơ bản của một Issue và danh sách các Sub-tasks con của nó.
+   * Endpoint: GET /rest/api/2/issue/{issueKey}?fields=summary,status,issuetype,subtasks,project
    * @param {string} baseUrl
    * @param {string} issueKey
    * @param {Object} authConfig
-   * @returns {Promise<{success: boolean, issue?: Object, error?: string}>}
+   * @returns {Promise<{success: boolean, issue?: Object, subtasks?: Array, error?: string}>}
    */
-  async getIssue(baseUrl, issueKey, authConfig = {}) {
+  async getIssueWithSubtasks(baseUrl, issueKey, authConfig = {}) {
     const cleanUrl = this.normalizeBaseUrl(baseUrl);
     const key = (issueKey || '').trim().toUpperCase();
 
@@ -140,7 +139,7 @@ const JiraApi = {
       return { success: false, error: 'Thiếu Jira URL hoặc Issue Key' };
     }
 
-    const endpoint = `${cleanUrl}/rest/api/2/issue/${key}?fields=summary,status,issuetype`;
+    const endpoint = `${cleanUrl}/rest/api/2/issue/${key}?fields=summary,status,issuetype,subtasks,project`;
 
     try {
       const response = await fetch(endpoint, {
@@ -155,14 +154,26 @@ const JiraApi = {
       }
 
       const data = await response.json();
+      const rawSubtasks = data.fields?.subtasks || [];
+      const subtasks = rawSubtasks.map((st) => ({
+        id: st.id,
+        key: st.key,
+        summary: st.fields?.summary || '',
+        status: st.fields?.status?.name || '',
+        issueType: st.fields?.issuetype?.name || ''
+      }));
+
       return {
         success: true,
         issue: {
+          id: data.id,
           key: data.key,
           summary: data.fields?.summary || '',
           status: data.fields?.status?.name || '',
-          issueType: data.fields?.issuetype?.name || ''
-        }
+          issueType: data.fields?.issuetype?.name || '',
+          projectKey: data.fields?.project?.key || ''
+        },
+        subtasks
       };
     } catch (err) {
       return { success: false, error: err.message };
@@ -170,13 +181,14 @@ const JiraApi = {
   },
 
   /**
-   * Lấy toàn bộ worklog của issue để kiểm tra những ngày đã được log trước đó.
-   * Giúp ngăn chặn việc logwork trùng lặp 2 lần cho cùng một ngày.
+   * Lấy toàn bộ worklog của issue và tính tổng số giờ đã log trên issue đó.
+   * Giúp kiểm tra ràng buộc nghiệp vụ: "mỗi task/sub-task chỉ cho logwork tối đa 8 giờ".
    * Endpoint: GET /rest/api/2/issue/{issueKey}/worklog
+   *
    * @param {string} baseUrl
    * @param {string} issueKey
    * @param {Object} authConfig
-   * @returns {Promise<{success: boolean, loggedDates: Set<string>, worklogs: Array, error?: string}>}
+   * @returns {Promise<{success: boolean, loggedDates: Set<string>, totalSeconds: number, totalHours: number, isAt8hCap: boolean, worklogs: Array, error?: string}>}
    */
   async getWorklogs(baseUrl, issueKey, authConfig = {}) {
     const cleanUrl = this.normalizeBaseUrl(baseUrl);
@@ -193,28 +205,54 @@ const JiraApi = {
 
       if (!response.ok) {
         const errorMsg = await this.parseErrorMessage(response);
-        return { success: false, loggedDates: new Set(), worklogs: [], error: errorMsg };
+        return {
+          success: false,
+          loggedDates: new Set(),
+          totalSeconds: 0,
+          totalHours: 0,
+          isAt8hCap: false,
+          worklogs: [],
+          error: errorMsg
+        };
       }
 
       const data = await response.json();
       const worklogs = data.worklogs || [];
       const loggedDates = new Set();
+      let totalSeconds = 0;
 
       for (const log of worklogs) {
         if (log.started) {
-          // started có dạng '2026-10-01T09:00:00.000+0700' -> cắt lấy '2026-10-01'
           const dateOnly = log.started.slice(0, 10);
           loggedDates.add(dateOnly);
         }
+        if (typeof log.timeSpentSeconds === 'number') {
+          totalSeconds += log.timeSpentSeconds;
+        }
       }
+
+      const totalHours = Math.round((totalSeconds / 3600) * 10) / 10;
+      // 8 giờ tương đương 28,800 giây
+      const isAt8hCap = totalSeconds >= 28800;
 
       return {
         success: true,
         loggedDates,
+        totalSeconds,
+        totalHours,
+        isAt8hCap,
         worklogs
       };
     } catch (err) {
-      return { success: false, loggedDates: new Set(), worklogs: [], error: err.message };
+      return {
+        success: false,
+        loggedDates: new Set(),
+        totalSeconds: 0,
+        totalHours: 0,
+        isAt8hCap: false,
+        worklogs: [],
+        error: err.message
+      };
     }
   },
 
@@ -260,7 +298,7 @@ const JiraApi = {
   },
 
   /**
-   * Tạo mới một Task hoặc Issue trên Jira.
+   * Tạo mới một Task hoặc Issue độc lập trên Jira.
    * Endpoint: POST /rest/api/2/issue
    * @param {string} baseUrl
    * @param {Object} params - { projectKey: string, summary: string, description?: string, issueType?: string }
@@ -277,7 +315,7 @@ const JiraApi = {
           key: (params.projectKey || '').trim().toUpperCase()
         },
         summary: (params.summary || '').trim(),
-        description: params.description || 'Task tự động khởi tạo hàng tháng để logwork',
+        description: params.description || 'Task tự động khởi tạo để logwork',
         issuetype: {
           name: params.issueType || 'Task'
         }
@@ -309,35 +347,63 @@ const JiraApi = {
   },
 
   /**
-   * Lấy danh sách các Project mà người dùng có quyền xem (dùng để gợi ý project key).
-   * Endpoint: GET /rest/api/2/project
+   * Tạo mới một Sub-task gắn với một Task cha (Parent Issue).
+   * Thử nghiệm với issueType 'Sub-task' trước, nếu lỗi loại issue sẽ thử 'Subtask'.
+   *
    * @param {string} baseUrl
+   * @param {Object} params - { parentKey: string, projectKey: string, summary: string, description?: string }
    * @param {Object} authConfig
-   * @returns {Promise<{success: boolean, projects: Array, error?: string}>}
+   * @returns {Promise<{success: boolean, createdKey?: string, error?: string}>}
    */
-  async getProjects(baseUrl, authConfig = {}) {
+  async createSubtask(baseUrl, params, authConfig = {}) {
     const cleanUrl = this.normalizeBaseUrl(baseUrl);
-    const endpoint = `${cleanUrl}/rest/api/2/project`;
+    const endpoint = `${cleanUrl}/rest/api/2/issue`;
+
+    const parentKey = (params.parentKey || '').trim().toUpperCase();
+    const projectKey = (params.projectKey || parentKey.split('-')[0] || '').trim().toUpperCase();
+
+    const makeBody = (typeName) => ({
+      fields: {
+        project: { key: projectKey },
+        parent: { key: parentKey },
+        summary: (params.summary || '').trim(),
+        description: params.description || 'Sub-task thực hiện công việc',
+        issuetype: { name: typeName }
+      }
+    });
 
     try {
-      const response = await fetch(endpoint, {
-        method: 'GET',
+      // Thử với tên chuẩn 'Sub-task'
+      let response = await fetch(endpoint, {
+        method: 'POST',
         headers: this.buildHeaders(authConfig),
-        credentials: 'include'
+        credentials: 'include',
+        body: JSON.stringify(makeBody('Sub-task'))
       });
+
+      // Nếu lỗi 400 có thể do Jira quy định tên là 'Subtask'
+      if (!response.ok && response.status === 400) {
+        const retryRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: this.buildHeaders(authConfig),
+          credentials: 'include',
+          body: JSON.stringify(makeBody('Subtask'))
+        });
+        if (retryRes.ok) {
+          const data = await retryRes.json();
+          return { success: true, createdKey: data.key };
+        }
+      }
 
       if (!response.ok) {
         const errorMsg = await this.parseErrorMessage(response);
-        return { success: false, projects: [], error: errorMsg };
+        return { success: false, error: errorMsg };
       }
 
-      const projects = await response.json();
-      return {
-        success: true,
-        projects: projects.map((p) => ({ key: p.key, name: p.name }))
-      };
+      const data = await response.json();
+      return { success: true, createdKey: data.key };
     } catch (err) {
-      return { success: false, projects: [], error: err.message };
+      return { success: false, error: err.message };
     }
   }
 };

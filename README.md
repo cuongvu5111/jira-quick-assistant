@@ -1,9 +1,10 @@
-# 🚀 Jira Quick Assistant - Tiện ích Tự động hóa Task & Logwork Hàng Tháng
+# 🚀 Jira Quick Assistant v2.0 - Tự Động Hóa Task & Logwork Hàng Tuần/Tháng
 
-Tiện ích mở rộng (**Chrome Extension Manifest V3**) hỗ trợ nhân viên giải phóng thời gian khỏi các thao tác thủ công nhàm chán lặp đi lặp lại hàng tháng trên hệ thống **Jira Server / Data Center** nội bộ của doanh nghiệp:
-1. **Tạo Task định kỳ hàng tháng**: Hỗ trợ template tự động thay thế `{month}`, `{year}`.
-2. **Logwork hàng loạt 1-Click**: Tự động tính toán các ngày làm việc (Thứ 2 đến Thứ 6), loại trừ ngày nghỉ lễ / phép, kiểm tra chống log trùng ngày và ghi toàn bộ số giờ trong tháng chỉ với 1 thao tác.
-3. **Không cần cài đặt phức tạp**: Tận dụng trực tiếp phiên đăng nhập (Cookie SSO) đang có trên trình duyệt của bạn.
+Tiện ích mở rộng (**Chrome Extension Manifest V3**) được tối ưu riêng cho quy trình doanh nghiệp (VNPT / CNTT) trên hệ thống **Jira Server / Data Center**:
+- **Logwork theo Tuần & Tháng**: Linh hoạt chọn khoảng thời gian làm việc (Tuần 1..5 hoặc cả tháng).
+- **Tạo hàng loạt Sub-task cho Parent Issue**: Tự động sinh mẫu 5 Sub-task theo từng ngày trong tuần gắn trực tiếp vào task cha (ví dụ `DOFFICE-3880`).
+- **Phân bổ nhiều Task & Tuân thủ quy định tối đa 8h/task**: Ghép cặp 1-1 (1 ngày làm việc = 1 sub-task = tối đa 8 giờ), tự động kiểm tra và bỏ qua task đã đạt ngưỡng 8h để tránh vi phạm quy định công ty.
+- **Tự động nhận diện URL**: Người dùng chỉ cần dán nguyên đường dẫn Jira (ví dụ: `https://cntt.vnpt.vn/browse/DOFFICE-3880`), hệ thống sẽ tự động bóc tách Domain gốc và mã Issue Key.
 
 ---
 
@@ -12,99 +13,62 @@ Tiện ích mở rộng (**Chrome Extension Manifest V3**) hỗ trợ nhân viê
 lucid-planck/
 ├── manifest.json            # File cấu hình Chrome Extension Manifest V3
 ├── popup/
-│   ├── popup.html          # Giao diện Popup 3 Tab (Logwork, Tạo Task, Cài đặt)
-│   ├── popup.css           # Định dạng CSS hiện đại theo chuẩn Atlassian UI
-│   └── popup.js            # Xử lý logic giao diện, lưu trữ và điều phối batch request
+│   ├── popup.html          # Giao diện Popup 3 Tab nâng cấp v2.0
+│   ├── popup.css           # Định dạng CSS Atlassian UI với bảng mapping ngày công
+│   └── popup.js            # Điều phối chia tuần, tải sub-tasks và kiểm soát 8h/task
 ├── scripts/
-│   ├── jira-api.js         # Module giao tiếp Jira REST API (v2)
-│   └── date-utils.js       # Module tính toán ngày công và format ngày giờ chuẩn Jira
+│   ├── jira-api.js         # Giao tiếp Jira REST API (sub-tasks, worklog, XSRF token)
+│   └── date-utils.js       # Phân chia tuần làm việc, bóc tách URL, tính ngày công
 ├── assets/
 │   └── icons/              # Bộ icon 16x16, 48x48, 128x128
-└── README.md               # Hướng dẫn cài đặt và sử dụng
+└── README.md               # Hướng dẫn chi tiết
 ```
 
 ---
 
-## 🛠️ Hướng dẫn cài đặt vào Google Chrome
+## 🛠️ Hướng dẫn cài đặt / Cập nhật vào Google Chrome
 
-Bạn chỉ mất khoảng **30 giây** để cài đặt extension này vào Chrome mà không cần build phức tạp:
-
-1. **Mở trang quản lý tiện ích**:
-   - Trên Google Chrome, truy cập vào đường dẫn: `chrome://extensions/` (hoặc bấm vào biểu tượng Mảnh ghép ở góc trên bên phải → chọn **Quản lý tiện ích**).
-2. **Bật Chế độ dành cho nhà phát triển (Developer mode)**:
-   - Gạt công tắc **Chế độ dành cho nhà phát triển** (góc trên bên phải màn hình) sang trạng thái **BẬT (ON)**.
-3. **Nạp tiện ích vào Chrome**:
-   - Nhấn vào nút **Tải tiện ích đã giải nén** (**Load unpacked**) ở góc trên bên trái.
-   - Trỏ tới thư mục dự án này:
-     ```
-     c:\Users\cuong\Documents\antigravity\lucid-planck
-     ```
-   - Nhấn **Select Folder**.
-4. **Ghim tiện ích để sử dụng nhanh**:
-   - Bấm vào biểu tượng Mảnh ghép trên thanh công cụ của Chrome và bấm vào chiếc **Ghim (Pin)** cạnh `Jira Quick Assistant`.
-
----
-
-## 📖 Hướng dẫn sử dụng từng bước
-
-### Bước 1: Cấu hình lần đầu (Tab "Cài đặt")
-1. Mở popup tiện ích bằng cách click vào icon Jira trên thanh công cụ Chrome.
-2. Chuyển sang tab **⚙️ Cài đặt**:
-   - **Jira Base URL**: Nhập địa chỉ web Jira của công ty bạn (Ví dụ: `https://jira.company.com` hoặc `http://jira.internal:8080`).
-   - **Phương thức xác thực**:
-     - *Mặc định*: Chọn **Session Cookie (Đăng nhập sẵn trên trình duyệt)**. Tiện ích sẽ tự động dùng phiên đăng nhập Jira hiện có của bạn trên Chrome mà không cần nhập mật khẩu.
-     - *Nâng cao*: Nếu công ty bạn yêu cầu dùng Token, chọn **Personal Access Token (PAT)** và dán mã token vào.
-   - **Danh sách ngày nghỉ lễ / ngày phép**: Nhập các ngày nghỉ cần loại trừ (ví dụ: `2026-10-20, 2026-09-02`).
-3. Bấm **🔌 Kiểm Tra Kết Nối (Ping)**: Nếu kết nối thành công, hệ thống sẽ hiển thị tên và avatar tài khoản Jira của bạn.
-4. Bấm **💾 Lưu Cài Đặt**.
-
----
-
-### Bước 2: Tạo Task định kỳ hàng tháng (Tab "Tạo Task Mẫu")
-*Nếu bạn đã có sẵn mã Issue Key do quản lý giao, bạn có thể bỏ qua bước này và sang luôn Bước 3.*
-
-1. Chuyển sang tab **📝 Tạo Task Mẫu**.
-2. Nhập **Mã Project** (ví dụ: `PROJ`).
-3. Tiêu đề task đã được cài sẵn mẫu:
+1. Truy cập `chrome://extensions/` trên Google Chrome.
+2. Bật **Chế độ dành cho nhà phát triển** (**Developer mode**).
+3. Bấm **Tải tiện ích đã giải nén** (**Load unpacked**) và chọn thư mục:
    ```
-   [Tháng {month}/{year}] Công việc thường nhật & Vận hành
+   c:\Users\cuong\Documents\antigravity\lucid-planck
    ```
-   *(Biến `{month}` và `{year}` sẽ tự động được thay bằng tháng và năm tương ứng)*.
-4. Bấm **🚀 Tạo Task Mới Ngay**.
-5. Sau khi tạo xong, bấm vào nút **👉 Chuyển sang Logwork ngay cho task này** để tự động điền mã task sang tab Logwork.
+*(Nếu bạn đã cài bản v1 trước đó, chỉ cần bấm vào biểu tượng **Nạp lại (Reload / 🔄)** trên thẻ của tiện ích).*
 
 ---
 
-### Bước 3: Tự động Logwork cả tháng (Tab "Logwork Tháng")
-1. Chọn **Tháng** và **Năm** cần log.
-2. Nhập hoặc chọn **Mã Issue Key** (tiện ích tự động lưu lại 5 issue bạn dùng gần nhất để chọn nhanh).
-3. Bấm **🔍 Kiểm tra**: Tiện ích sẽ truy vấn Jira để:
-   - Hiển thị tên task và trạng thái.
-   - Quét xem những ngày nào trong tháng này bạn **đã từng logwork** trước đó.
-4. Điều chỉnh số giờ mỗi ngày (mặc định: `8h`), giờ bắt đầu (`09:00`) và ghi chú worklog.
-5. Xem bảng **Tóm tắt ngày công**:
-   - Tổng ngày công trong tháng (đã tự động bỏ Thứ 7, Chủ Nhật và ngày nghỉ lễ).
-   - Số ngày đã logwork trước đó.
-   - Số ngày sẽ được log mới và tổng số giờ dự kiến.
-   - *(Tùy chọn: Bấm **Chi tiết ▼** để xem trạng thái từng ngày)*.
-6. Bấm **⚡ Bắt đầu Logwork Tự Động**:
-   - Hệ thống sẽ hiển thị thanh tiến trình và gửi logwork lần lượt cho từng ngày.
-   - Có cơ chế nghỉ nhẹ giữa các lượt request để tránh gây nghẽn máy chủ Jira.
+## 📖 Hướng dẫn sử dụng các tính năng mới (v2.0)
+
+### 1. Tạo hàng loạt Sub-task cho Task Cha (Tab "Tạo Task / Sub-task")
+1. Mở tab **📝 Tạo Task / Sub-task**.
+2. Tại ô **Mã Task Cha**, nhập hoặc dán link task cha:
+   ```
+   https://cntt.vnpt.vn/browse/DOFFICE-3880
+   ```
+   *(Extension sẽ tự động lấy mã `DOFFICE-3880`)*.
+3. Bấm nút **⚡ Sinh 5 Sub-task theo tuần**: Hệ thống sẽ tự động điền danh sách 5 sub-tasks tương ứng với Thứ 2 đến Thứ 6 trong tuần (bạn có thể chỉnh sửa lại tiêu đề tùy ý).
+4. Bấm **🚀 Bắt Đầu Tạo Danh Sách Sub-task**: Các sub-tasks sẽ được khởi tạo tuần tự trên Jira.
+5. Sau khi tạo xong, bấm nút **👉 Chuyển sang Tab Logwork cho Task Cha này ngay**.
 
 ---
 
-## 🛡️ Tính năng nổi bật & Xử lý sự cố (Troubleshooting)
+### 2. Logwork theo Tuần & Phân bổ nhiều Sub-task (Tab "Logwork")
+1. Mở tab **⏱️ Logwork**.
+2. Chọn phạm vi: Bấm chọn **📅 Theo Tuần** → Chọn tuần làm việc muốn log (ví dụ: `Tuần 3 (12/10 - 16/10)`).
+3. Chọn chế độ phân bổ: Chọn **Phân bổ Sub-tasks của Task Cha**.
+4. Bấm nút **🔄 Tải Sub-tasks**:
+   - Extension sẽ tự động lấy toàn bộ sub-tasks của `DOFFICE-3880`.
+   - Quét số giờ đã log hiện có của từng sub-task.
+5. Bảng **Chi tiết phân bổ** sẽ tự động ghép cặp 1-1:
+   - **Thứ 2 (12/10)** ↔ `DOFFICE-3881` *(Sẵn sàng 8h)*
+   - **Thứ 3 (13/10)** ↔ `DOFFICE-3882` *(Sẵn sàng 8h)*
+   - Nếu bất kỳ task nào đã có đủ 8h trước đó, hệ thống sẽ gắn nhãn `⚠️ Đã đủ 8h (Bỏ qua)` và tự động loại trừ để **tuân thủ nghiêm ngặt quy định công ty**.
+6. Bấm **⚡ Bắt đầu Phân Bổ & Logwork**: Hệ thống sẽ ghi giờ tuần tự cho từng task và cập nhật thanh tiến trình theo thời gian thực.
 
-### 1. Cơ chế chống trùng lặp (Duplicate Protection)
-Khi bật tùy chọn *"Bỏ qua những ngày đã có worklog"*, tiện ích sẽ tự động đối chiếu toàn bộ các worklog hiện có trên issue đó. Nếu ngày đó đã được log từ trước, tiện ích sẽ bỏ qua và chỉ log những ngày còn thiếu, giúp bạn không bao giờ bị log thừa giờ.
+---
 
-### 2. Lỗi 403 XSRF Check Failed trên Jira Server
-Jira Server / Data Center có cơ chế bảo mật chống tấn công giả mạo yêu cầu (XSRF). Tiện ích đã tự động tích hợp header:
-```http
-X-Atlassian-Token: no-check
-```
-giúp toàn bộ các request POST (tạo task, logwork) hoạt động trơn tru.
-
-### 3. Lỗi 401 Unauthorized hoặc chưa đăng nhập
-- Hãy đảm bảo bạn đã mở một tab trình duyệt và đăng nhập thành công vào trang web Jira của công ty.
-- Nếu công ty sử dụng mạng nội bộ, hãy chắc chắn bạn đã bật **VPN** công ty trước khi bấm kiểm tra kết nối.
+### 3. Cấu hình Jira VNPT (Tab "Cài đặt")
+- **Jira Base URL**: Dán `https://cntt.vnpt.vn` (hoặc dán cả link task, hệ thống tự lọc domain).
+- **Phương thức xác thực**: Chọn **Session Cookie (Đăng nhập sẵn trên trình duyệt / VPN)**.
+- Bấm **🔌 Kiểm Tra Kết Nối (Ping)** để xác nhận trạng thái đăng nhập.

@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <!--
-  Ngày tạo: 13/10/2026
-  Mục đích: Giao diện chính của tiện ích Jira Quick Assistant trên Chrome Popup.
-           Thiết kế giao diện tab hiện đại, trực quan theo phong cách Atlassian Design System.
+  Ngày tạo: 13/10/2026 (Cập nhật phiên bản 2.0)
+  Mục đích: Giao diện nâng cấp Jira Quick Assistant: Hỗ trợ logwork theo tuần,
+           tạo nhiều sub-task hàng loạt cho parent issue và phân bổ logwork nhiều task
+           với kiểm soát nghiêm ngặt quy định tối đa 8 giờ/task.
 -->
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Jira Quick Assistant</title>
+  <title>Jira Quick Assistant V2</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -17,8 +18,8 @@
     <div class="logo-group">
       <img src="../assets/icons/icon48.png" alt="Jira Assistant Logo" class="app-logo">
       <div>
-        <h1 class="app-title">Jira Quick Assistant</h1>
-        <p class="app-subtitle">Tự động hóa Task & Logwork hàng tháng</p>
+        <h1 class="app-title">Jira Quick Assistant <span class="badge-v2">v2.0</span></h1>
+        <p class="app-subtitle">Logwork theo Tuần/Tháng & Quản lý Sub-task</p>
       </div>
     </div>
     <div id="user-status-pill" class="status-pill status-disconnected" title="Trạng thái kết nối Jira">
@@ -30,10 +31,10 @@
   <!-- Thanh điều hướng Tab -->
   <nav class="nav-tabs">
     <button class="tab-btn active" data-tab="tab-logwork">
-      <span class="tab-icon">⏱️</span> Logwork Tháng
+      <span class="tab-icon">⏱️</span> Logwork
     </button>
     <button class="tab-btn" data-tab="tab-create-task">
-      <span class="tab-icon">📝</span> Tạo Task Mẫu
+      <span class="tab-icon">📝</span> Tạo Task / Sub-task
     </button>
     <button class="tab-btn" data-tab="tab-settings">
       <span class="tab-icon">⚙️</span> Cài đặt
@@ -43,13 +44,19 @@
   <!-- Nội dung các Tab -->
   <main class="tab-content-container">
 
-    <!-- ==================== TAB 1: LOGWORK THÁNG ==================== -->
+    <!-- ==================== TAB 1: LOGWORK ==================== -->
     <section id="tab-logwork" class="tab-pane active">
-      <!-- Cảnh báo cấu hình nếu chưa nhập URL -->
       <div id="url-warning-banner" class="alert-box alert-warning hidden">
         <span>⚠️ Bạn chưa cấu hình Jira URL. Hãy vào tab <strong>Cài đặt</strong> để thiết lập trước khi dùng.</span>
       </div>
 
+      <!-- Chuyển đổi phạm vi: Theo Tuần vs Theo Tháng -->
+      <div class="segmented-control">
+        <button type="button" class="segment-btn active" id="btn-mode-week" data-mode="week">📅 Theo Tuần</button>
+        <button type="button" class="segment-btn" id="btn-mode-month" data-mode="month">🗓️ Theo Tháng</button>
+      </div>
+
+      <!-- Bộ chọn Tháng & Năm -->
       <div class="form-row form-row-2col">
         <div class="form-group">
           <label for="log-month">Tháng:</label>
@@ -61,24 +68,74 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <div class="label-with-action">
-          <label for="log-issue-key">Mã Issue Key (vd: PROJ-123): <span class="required">*</span></label>
-          <button id="btn-verify-issue" type="button" class="btn-text" title="Kiểm tra issue này trên Jira">🔍 Kiểm tra</button>
-        </div>
-        <div class="input-with-history">
-          <input type="text" id="log-issue-key" class="form-control" placeholder="Nhập Issue Key (ví dụ: PROJ-1234)">
-          <select id="history-issue-select" class="form-control form-control-compact hidden" title="Các Issue gần đây">
-            <option value="">-- Issue gần đây --</option>
-          </select>
-        </div>
-        <div id="issue-info-badge" class="info-badge hidden"></div>
+      <!-- Dropdown chọn Tuần (chỉ hiện khi chọn chế độ Theo Tuần) -->
+      <div id="week-selector-group" class="form-group">
+        <label for="log-week-select">Chọn Tuần làm việc:</label>
+        <select id="log-week-select" class="form-control"></select>
       </div>
 
+      <!-- Chế độ chọn Task để Logwork -->
+      <div class="form-group">
+        <label>Chế độ phân bổ Task:</label>
+        <div class="radio-cards">
+          <label class="radio-card">
+            <input type="radio" name="target-mode" value="parent-subtasks" checked>
+            <div class="radio-card-content">
+              <strong>Phân bổ Sub-tasks của Task Cha</strong>
+              <span>Tải các sub-tasks từ Parent Key (mỗi ngày 1 sub-task ≤ 8h)</span>
+            </div>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="target-mode" value="single">
+            <div class="radio-card-content">
+              <strong>1 Task duy nhất</strong>
+              <span>Ghi toàn bộ ngày vào 1 Task duy nhất</span>
+            </div>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="target-mode" value="multi-keys">
+            <div class="radio-card-content">
+              <strong>Nhập danh sách nhiều Issue Keys</strong>
+              <span>Dán danh sách mã task (mỗi dòng 1 mã task)</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Vùng nhập cho Chế độ 1: Sub-tasks của Parent Issue -->
+      <div id="target-parent-group" class="form-group">
+        <div class="label-with-action">
+          <label for="parent-issue-key">Mã Task Cha (Parent Key hoặc dán Link Jira): <span class="required">*</span></label>
+          <button id="btn-fetch-subtasks" type="button" class="btn-text">🔄 Tải Sub-tasks</button>
+        </div>
+        <input type="text" id="parent-issue-key" class="form-control" placeholder="Ví dụ: DOFFICE-3880 hoặc dán cả link web Jira">
+        <div id="parent-info-badge" class="info-badge hidden"></div>
+      </div>
+
+      <!-- Vùng nhập cho Chế độ 2: 1 Task duy nhất -->
+      <div id="target-single-group" class="form-group hidden">
+        <div class="label-with-action">
+          <label for="log-issue-key">Mã Issue Key: <span class="required">*</span></label>
+          <button id="btn-verify-single-issue" type="button" class="btn-text">🔍 Kiểm tra</button>
+        </div>
+        <div class="input-with-history">
+          <input type="text" id="log-issue-key" class="form-control" placeholder="Nhập Issue Key (ví dụ: DOFFICE-3880)">
+          <select id="history-issue-select" class="form-control form-control-compact hidden"></select>
+        </div>
+        <div id="single-issue-info-badge" class="info-badge hidden"></div>
+      </div>
+
+      <!-- Vùng nhập cho Chế độ 3: Nhập danh sách nhiều Issue Keys -->
+      <div id="target-multi-group" class="form-group hidden">
+        <label for="multi-issue-keys">Danh sách Issue Keys (mỗi dòng 1 mã task): <span class="required">*</span></label>
+        <textarea id="multi-issue-keys" class="form-control" rows="3" placeholder="DOFFICE-3881&#10;DOFFICE-3882&#10;DOFFICE-3883"></textarea>
+      </div>
+
+      <!-- Cấu hình số giờ và nội dung -->
       <div class="form-row form-row-2col">
         <div class="form-group">
-          <label for="log-time-spent">Số giờ/ngày:</label>
-          <input type="text" id="log-time-spent" class="form-control" value="8h" placeholder="8h hoặc 4h">
+          <label for="log-time-spent">Số giờ/ngày: <span class="badge-rule">Tối đa 8h/task</span></label>
+          <input type="text" id="log-time-spent" class="form-control" value="8h" placeholder="8h">
         </div>
         <div class="form-group">
           <label for="log-start-time">Giờ bắt đầu:</label>
@@ -88,28 +145,28 @@
 
       <div class="form-group">
         <label for="log-comment">Nội dung ghi chú worklog:</label>
-        <input type="text" id="log-comment" class="form-control" value="Làm việc theo kế hoạch tháng" placeholder="Ghi chú worklog...">
+        <input type="text" id="log-comment" class="form-control" value="Làm việc theo kế hoạch" placeholder="Ghi chú worklog...">
       </div>
 
-      <!-- Tùy chọn bỏ qua ngày đã log -->
+      <!-- Tùy chọn bỏ qua ngày/task đã đủ 8h -->
       <div class="form-check-group">
         <label class="checkbox-container">
           <input type="checkbox" id="skip-logged-days" checked>
           <span class="checkmark"></span>
-          <span>Bỏ qua những ngày đã có worklog (tránh log trùng lặp)</span>
+          <span>Bỏ qua task đã đạt ngưỡng 8h (Tuân thủ quy định công ty)</span>
         </label>
       </div>
 
-      <!-- Bảng tóm tắt ngày công chuẩn bị log -->
+      <!-- Bảng tóm tắt & Xem trước phân bổ ngày công 1-1 với Task -->
       <div class="summary-card">
         <div class="summary-header">
-          <span class="summary-title">📊 Tóm tắt ngày công trong tháng:</span>
-          <button id="btn-toggle-days-preview" type="button" class="btn-text">Chi tiết ▼</button>
+          <span class="summary-title" id="summary-card-title">📊 Tóm tắt ngày công:</span>
+          <button id="btn-toggle-days-preview" type="button" class="btn-text">Chi tiết phân bổ ▼</button>
         </div>
         <div class="summary-stats">
           <div class="stat-item">
             <span class="stat-val" id="stat-total-working-days">0</span>
-            <span class="stat-lbl">Ngày công (T2-T6)</span>
+            <span class="stat-lbl">Ngày làm việc</span>
           </div>
           <div class="stat-item">
             <span class="stat-val stat-warning" id="stat-already-logged-days">0</span>
@@ -125,9 +182,19 @@
           </div>
         </div>
 
-        <!-- Danh sách chi tiết từng ngày (ẩn/hiện) -->
+        <!-- Bảng danh sách chi tiết ghép ngày ↔ task -->
         <div id="days-preview-container" class="days-preview-container hidden">
-          <ul id="days-preview-list" class="days-preview-list"></ul>
+          <table class="mapping-table">
+            <thead>
+              <tr>
+                <th>Ngày làm việc</th>
+                <th>Task / Sub-task gán</th>
+                <th>Hiện có</th>
+                <th>Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody id="mapping-table-body"></tbody>
+          </table>
         </div>
       </div>
 
@@ -146,49 +213,89 @@
       <!-- Nút hành động chính -->
       <div class="action-footer">
         <button id="btn-start-logwork" type="button" class="btn btn-primary btn-block">
-          ⚡ Bắt đầu Logwork Tự Động
+          ⚡ Bắt đầu Phân Bổ & Logwork
         </button>
       </div>
     </section>
 
-    <!-- ==================== TAB 2: TẠO TASK MẪU ==================== -->
+    <!-- ==================== TAB 2: TẠO TASK / SUB-TASK ==================== -->
     <section id="tab-create-task" class="tab-pane">
-      <div class="instruction-box">
-        💡 Tạo nhanh task định kỳ cho tháng mới. Sau khi tạo xong, bạn có thể chuyển ngay sang tab Logwork để ghi giờ.
+      <!-- Bộ chuyển đổi: Tạo Task độc lập vs Tạo nhiều Sub-task cho Parent -->
+      <div class="segmented-control">
+        <button type="button" class="segment-btn active" id="btn-create-subtasks-mode" data-createmode="subtasks">📋 Tạo nhiều Sub-task cho Parent</button>
+        <button type="button" class="segment-btn" id="btn-create-single-mode" data-createmode="single">📝 Tạo Task Độc Lập</button>
       </div>
 
-      <div class="form-row form-row-2col">
+      <!-- FORM A: TẠO NHIỀU SUB-TASK CHO PARENT ISSUE -->
+      <div id="form-create-subtasks">
         <div class="form-group">
-          <label for="task-project-key">Mã Project: <span class="required">*</span></label>
-          <input type="text" id="task-project-key" class="form-control" placeholder="Ví dụ: PROJ">
+          <label for="create-parent-key">Mã Task Cha (Parent Key hoặc dán Link Jira): <span class="required">*</span></label>
+          <input type="text" id="create-parent-key" class="form-control" placeholder="Ví dụ: DOFFICE-3880">
+          <span class="form-hint">Sub-tasks sẽ được gắn trực tiếp vào task cha này.</span>
         </div>
+
+        <div class="quick-template-bar">
+          <span class="quick-title">⚡ Mẫu tự động:</span>
+          <button type="button" id="btn-gen-week-subtasks" class="btn-chip">Sinh 5 Sub-task theo tuần</button>
+          <button type="button" id="btn-gen-month-subtasks" class="btn-chip">Sinh Sub-task cả tháng</button>
+        </div>
+
         <div class="form-group">
-          <label for="task-issue-type">Loại Issue:</label>
-          <select id="task-issue-type" class="form-control">
-            <option value="Task">Task</option>
-            <option value="Sub-task">Sub-task</option>
-            <option value="Story">Story</option>
-          </select>
+          <label for="create-subtask-list">Danh sách tiêu đề Sub-task (mỗi dòng 1 task): <span class="required">*</span></label>
+          <textarea id="create-subtask-list" class="form-control" rows="5" placeholder="[T2] Thực hiện công việc ngày 1&#10;[T3] Thực hiện công việc ngày 2&#10;..."></textarea>
+          <span class="form-hint">Mỗi dòng sẽ tạo ra 1 sub-task tương ứng với 1 ngày làm việc (tối đa 8h/task).</span>
+        </div>
+
+        <div id="create-subtasks-progress" class="progress-container hidden">
+          <div class="progress-bar-wrapper">
+            <div id="subtasks-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <span id="subtasks-progress-text" class="progress-text">Đang tạo...</span>
+        </div>
+
+        <div id="create-subtasks-result" class="alert-box hidden"></div>
+
+        <div class="action-footer">
+          <button id="btn-batch-create-subtasks" type="button" class="btn btn-primary btn-block">
+            🚀 Bắt Đầu Tạo Danh Sách Sub-task
+          </button>
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="task-summary">Tiêu đề Task (Summary): <span class="required">*</span></label>
-        <input type="text" id="task-summary" class="form-control" value="[Tháng {month}/{year}] Công việc thường nhật & Vận hành">
-        <span class="form-hint">Hỗ trợ biến tự động: <code>{month}</code>, <code>{year}</code></span>
-      </div>
+      <!-- FORM B: TẠO TASK ĐỘC LẬP (SINGLE TASK) -->
+      <div id="form-create-single" class="hidden">
+        <div class="form-row form-row-2col">
+          <div class="form-group">
+            <label for="task-project-key">Mã Project: <span class="required">*</span></label>
+            <input type="text" id="task-project-key" class="form-control" placeholder="Ví dụ: DOFFICE">
+          </div>
+          <div class="form-group">
+            <label for="task-issue-type">Loại Issue:</label>
+            <select id="task-issue-type" class="form-control">
+              <option value="Task">Task</option>
+              <option value="Story">Story</option>
+            </select>
+          </div>
+        </div>
 
-      <div class="form-group">
-        <label for="task-description">Mô tả (Description):</label>
-        <textarea id="task-description" class="form-control" rows="3" placeholder="Mô tả công việc trong tháng...">Task tự động khởi tạo để theo dõi và logwork công việc hàng ngày trong tháng {month}/{year}.</textarea>
-      </div>
+        <div class="form-group">
+          <label for="task-summary">Tiêu đề Task: <span class="required">*</span></label>
+          <input type="text" id="task-summary" class="form-control" value="[Tháng {month}/{year}] Công việc thường nhật & Vận hành">
+          <span class="form-hint">Hỗ trợ biến tự động: <code>{month}</code>, <code>{year}</code></span>
+        </div>
 
-      <div id="create-task-result" class="alert-box hidden"></div>
+        <div class="form-group">
+          <label for="task-description">Mô tả (Description):</label>
+          <textarea id="task-description" class="form-control" rows="3">Task tự động khởi tạo để theo dõi công việc tháng {month}/{year}.</textarea>
+        </div>
 
-      <div class="action-footer">
-        <button id="btn-create-task" type="button" class="btn btn-primary btn-block">
-          🚀 Tạo Task Mới Ngay
-        </button>
+        <div id="create-task-result" class="alert-box hidden"></div>
+
+        <div class="action-footer">
+          <button id="btn-create-single-task" type="button" class="btn btn-primary btn-block">
+            🚀 Tạo Task Mới Ngay
+          </button>
+        </div>
       </div>
     </section>
 
@@ -196,8 +303,8 @@
     <section id="tab-settings" class="tab-pane">
       <div class="form-group">
         <label for="jira-base-url">Jira Base URL: <span class="required">*</span></label>
-        <input type="url" id="jira-base-url" class="form-control" placeholder="https://jira.yourcompany.com">
-        <span class="form-hint">Địa chỉ Jira Server hoặc Data Center nội bộ của công ty bạn.</span>
+        <input type="url" id="jira-base-url" class="form-control" placeholder="https://cntt.vnpt.vn">
+        <span class="form-hint">Địa chỉ Jira nội bộ. Nếu dán cả đường link task, hệ thống sẽ tự bóc tách domain gốc.</span>
       </div>
 
       <div class="form-group">
@@ -206,7 +313,7 @@
           <label class="radio-container">
             <input type="radio" name="auth-type" value="cookie" checked>
             <span class="radio-mark"></span>
-            <span>Session Cookie (Đăng nhập sẵn trên trình duyệt)</span>
+            <span>Session Cookie (Đăng nhập sẵn trên trình duyệt / VPN)</span>
           </label>
           <label class="radio-container">
             <input type="radio" name="auth-type" value="token">
@@ -219,13 +326,11 @@
       <div id="pat-input-group" class="form-group hidden">
         <label for="personal-access-token">Personal Access Token:</label>
         <input type="password" id="personal-access-token" class="form-control" placeholder="Dán mã Token vào đây...">
-        <span class="form-hint">Dành cho Jira Server có bật tính năng Personal Access Token.</span>
       </div>
 
       <div class="form-group">
         <label for="excluded-holidays">Danh sách ngày nghỉ lễ / ngày phép loại trừ:</label>
         <textarea id="excluded-holidays" class="form-control" rows="2" placeholder="Ví dụ: 2026-10-20, 2026-09-02 (hoặc 20/10/2026)"></textarea>
-        <span class="form-hint">Các ngày này sẽ tự động được loại trừ khi tính toán ngày công logwork.</span>
       </div>
 
       <div id="connection-test-result" class="alert-box hidden"></div>
