@@ -104,7 +104,25 @@
 
       <!-- Vùng nhập cho Chế độ 1: Sub-tasks của Parent Issue -->
       <div id="target-parent-group" class="form-group">
-        <div class="label-with-action">
+        <!-- Dropdown chọn nhanh từ Task của tôi (My Issues) -->
+        <div class="quick-select-card">
+          <div class="quick-select-header">
+            <span class="quick-select-title">⚡ Chọn nhanh Task của tôi:</span>
+            <div class="quick-select-controls">
+              <select id="quick-filter-select" class="form-control form-control-xs" title="Bộ lọc JQL">
+                <option value="unresolved">Chưa Resolve</option>
+                <option value="unlogged">Chưa Logwork</option>
+                <option value="recent">Gần đây</option>
+              </select>
+              <button id="btn-refresh-my-issues" type="button" class="btn-icon" title="Tải lại danh sách Task của bạn">🔄</button>
+            </div>
+          </div>
+          <select id="quick-parent-issue-select" class="form-control form-control-sm">
+            <option value="">-- Chọn nhanh từ Task đang mở của bạn --</option>
+          </select>
+        </div>
+
+        <div class="label-with-action" style="margin-top: 6px;">
           <label for="parent-issue-key">Mã Task Cha (Parent Key hoặc dán Link Jira): <span class="required">*</span></label>
           <button id="btn-fetch-subtasks" type="button" class="btn-text">🔄 Tải Sub-tasks</button>
         </div>
@@ -114,7 +132,15 @@
 
       <!-- Vùng nhập cho Chế độ 2: 1 Task duy nhất -->
       <div id="target-single-group" class="form-group hidden">
-        <div class="label-with-action">
+        <div class="quick-select-card">
+          <div class="quick-select-header">
+            <span class="quick-select-title">⚡ Chọn nhanh Task đơn của tôi:</span>
+          </div>
+          <select id="quick-single-issue-select" class="form-control form-control-sm">
+            <option value="">-- Chọn nhanh từ Task đang mở của bạn --</option>
+          </select>
+        </div>
+        <div class="label-with-action" style="margin-top: 6px;">
           <label for="log-issue-key">Mã Issue Key: <span class="required">*</span></label>
           <button id="btn-verify-single-issue" type="button" class="btn-text">🔍 Kiểm tra</button>
         </div>
@@ -234,8 +260,19 @@
       <!-- FORM A: TẠO NHIỀU SUB-TASK CHO PARENT ISSUE -->
       <div id="form-create-subtasks">
         <div class="form-group">
-          <label for="create-parent-key">Mã Task Cha (Parent Key hoặc dán Link Jira): <span class="required">*</span></label>
-          <input type="text" id="create-parent-key" class="form-control" placeholder="Ví dụ: DOFFICE-3880">
+          <!-- Dropdown chọn nhanh Task cha từ My Issues -->
+          <div class="quick-select-card">
+            <div class="quick-select-header">
+              <span class="quick-select-title">⚡ Chọn nhanh Task Cha từ danh sách của bạn:</span>
+              <button id="btn-refresh-create-parent" type="button" class="btn-icon" title="Tải lại danh sách Task của bạn">🔄</button>
+            </div>
+            <select id="quick-create-parent-select" class="form-control form-control-sm">
+              <option value="">-- Chọn nhanh Task Cha đang mở của bạn --</option>
+            </select>
+          </div>
+
+          <label for="create-parent-key" style="margin-top: 6px;">Mã Task Cha (Parent Key hoặc dán Link Jira): <span class="required">*</span></label>
+          <input type="text" id="create-parent-key" class="form-control" placeholder="Ví dụ: DOFFICE-3880 hoặc dán cả link web Jira">
           <span class="form-hint">Sub-tasks sẽ được gắn trực tiếp vào task cha này.</span>
         </div>
 
@@ -308,8 +345,16 @@
       <div id="form-create-single" class="hidden">
         <div class="form-row form-row-2col">
           <div class="form-group">
-            <label for="task-project-key">Mã Project: <span class="required">*</span></label>
-            <input type="text" id="task-project-key" class="form-control" placeholder="Ví dụ: DOFFICE">
+            <div class="label-with-action">
+              <label for="task-project-key">Mã Project: <span class="required">*</span></label>
+              <button id="btn-refresh-projects" type="button" class="btn-text" style="font-size: 11px;">🔄 Tải dự án</button>
+            </div>
+            <div class="input-with-history">
+              <input type="text" id="task-project-key" class="form-control" placeholder="Ví dụ: DOFFICE">
+              <select id="quick-project-select" class="form-control form-control-compact" style="max-width: 140px;">
+                <option value="">-- Chọn Dự án --</option>
+              </select>
+            </div>
           </div>
           <div class="form-group">
             <label for="task-issue-type">Loại Issue:</label>

@@ -796,6 +796,123 @@ const JiraApi = {
     } catch (err) {
       return { success: false, error: err.message };
     }
+  },
+
+  /**
+   * Lấy danh sách tất cả các Dự án (Projects) mà tài khoản có quyền truy cập.
+   * Endpoint: GET /rest/api/2/project
+   *
+   * @param {string} baseUrl
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, projects?: Array<{id: string, key: string, name: string}>, error?: string}>}
+   */
+  async getProjects(baseUrl, authConfig = {}) {
+    const cleanUrl = this.normalizeBaseUrl(baseUrl);
+    if (!cleanUrl) {
+      return { success: false, error: 'Chưa cấu hình Jira URL', projects: [] };
+    }
+
+    const endpoint = `${cleanUrl}/rest/api/2/project`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorMsg = await this.parseErrorMessage(response);
+        return { success: false, error: errorMsg, projects: [] };
+      }
+
+      const data = await response.json();
+      const projects = (Array.isArray(data) ? data : []).map((p) => ({
+        id: p.id,
+        key: p.key,
+        name: p.name || p.key
+      }));
+
+      return { success: true, projects };
+    } catch (err) {
+      return { success: false, error: err.message, projects: [] };
+    }
+  },
+
+  /**
+   * Tìm kiếm các task gán cho người dùng hiện tại (My Issues) bằng JQL.
+   * Hỗ trợ các bộ lọc:
+   * - 'unresolved': Task đang mở, chưa hoàn thành (mặc định)
+   * - 'unlogged': Task chưa logwork hoặc số giờ log = 0
+   * - 'recent': Task cập nhật gần đây nhất
+   *
+   * @param {string} baseUrl
+   * @param {Object} options - { filter?: 'unresolved' | 'unlogged' | 'recent', projectKey?: string, maxResults?: number }
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, issues?: Array, error?: string}>}
+   */
+  async getMyIssues(baseUrl, options = {}, authConfig = {}) {
+    const cleanUrl = this.normalizeBaseUrl(baseUrl);
+    if (!cleanUrl) {
+      return { success: false, error: 'Chưa cấu hình Jira URL', issues: [] };
+    }
+
+    const filter = options.filter || 'unresolved';
+    const projectKey = (options.projectKey || '').trim().toUpperCase();
+    const maxResults = options.maxResults || 40;
+
+    let jql = 'assignee = currentUser()';
+
+    if (projectKey) {
+      jql += ` AND project = "${projectKey}"`;
+    }
+
+    if (filter === 'unresolved') {
+      jql += ' AND resolution = Unresolved';
+    } else if (filter === 'unlogged') {
+      jql += ' AND resolution = Unresolved AND (timespent is EMPTY OR timespent = 0)';
+    }
+
+    jql += ' ORDER BY updated DESC';
+
+    const endpoint = `${cleanUrl}/rest/api/2/search?jql=${encodeURIComponent(jql)}&fields=summary,status,issuetype,timespent,duedate,project&maxResults=${maxResults}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorMsg = await this.parseErrorMessage(response);
+        return { success: false, error: errorMsg, issues: [] };
+      }
+
+      const data = await response.json();
+      const rawIssues = data.issues || [];
+      const issues = rawIssues.map((item) => {
+        const fields = item.fields || {};
+        const timeSpentSeconds = typeof fields.timespent === 'number' ? fields.timespent : 0;
+        const totalHours = Math.round((timeSpentSeconds / 3600) * 10) / 10;
+        return {
+          id: item.id,
+          key: item.key,
+          summary: fields.summary || '',
+          status: fields.status?.name || '',
+          statusCategory: fields.status?.statusCategory?.key || '',
+          issueType: fields.issuetype?.name || '',
+          isSubtask: !!fields.issuetype?.subtask,
+          projectKey: fields.project?.key || item.key.split('-')[0],
+          dueDate: fields.duedate || '',
+          totalHours
+        };
+      });
+
+      return { success: true, issues };
+    } catch (err) {
+      return { success: false, error: err.message, issues: [] };
+    }
   }
 };
 

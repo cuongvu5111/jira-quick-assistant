@@ -31,7 +31,10 @@ const AppState = {
   activeWorkingDays: [],
   loadedSubtasks: [], // Array<{ key, summary, status, totalSeconds, totalHours, isAt8hCap, loggedDates }>
   taskMapping: [], // Array<{ day, issueKey, issueSummary, status, hoursToLog, skip }>
-  isRunningBatch: false
+  isRunningBatch: false,
+  cachedProjects: [],
+  cachedMyIssues: [],
+  currentMyIssuesFilter: 'unresolved'
 };
 
 // ============================================================================
@@ -284,6 +287,10 @@ async function checkInitialConnection() {
     if (subtaskAssigneeLabel) subtaskAssigneeLabel.textContent = `Gán Người thực hiện (Assignee) là tôi (${res.user.displayName || res.user.name})`;
     const taskAssigneeLabel = document.getElementById('task-assignee-label');
     if (taskAssigneeLabel) taskAssigneeLabel.textContent = `Gán Assignee là tôi (${res.user.displayName || res.user.name})`;
+
+    // Tự động tải My Issues và Projects ngầm
+    loadAndRenderMyIssues('unresolved');
+    loadAndRenderProjects();
   } else {
     statusPill.className = 'status-pill status-disconnected';
     statusText.textContent = 'Chưa đăng nhập';
@@ -433,6 +440,95 @@ function initEventHandlers() {
   });
   document.getElementById('btn-test-connection').addEventListener('click', handleTestConnection);
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings);
+
+  // ==========================================================================
+  // Sự kiện cho các dropdown Quick Select (My Issues & Projects)
+  // ==========================================================================
+  const filterSelect = document.getElementById('quick-filter-select');
+  if (filterSelect) {
+    filterSelect.addEventListener('change', (e) => {
+      loadAndRenderMyIssues(e.target.value, true);
+    });
+  }
+
+  const btnRefreshMyIssues = document.getElementById('btn-refresh-my-issues');
+  if (btnRefreshMyIssues) {
+    btnRefreshMyIssues.addEventListener('click', () => {
+      const currentFilter = document.getElementById('quick-filter-select')?.value || 'unresolved';
+      loadAndRenderMyIssues(currentFilter, true);
+    });
+  }
+
+  const quickParentSelect = document.getElementById('quick-parent-issue-select');
+  if (quickParentSelect) {
+    quickParentSelect.addEventListener('change', (e) => {
+      const selectedKey = e.target.value;
+      if (selectedKey) {
+        const pInput = document.getElementById('parent-issue-key');
+        if (pInput) {
+          pInput.value = selectedKey;
+          handleFetchParentSubtasks();
+        }
+      }
+    });
+  }
+
+  const quickSingleSelect = document.getElementById('quick-single-issue-select');
+  if (quickSingleSelect) {
+    quickSingleSelect.addEventListener('change', (e) => {
+      const selectedKey = e.target.value;
+      if (selectedKey) {
+        const sInput = document.getElementById('log-issue-key');
+        if (sInput) {
+          sInput.value = selectedKey;
+          verifySingleIssue(selectedKey);
+        }
+      }
+    });
+  }
+
+  const quickCreateParentSelect = document.getElementById('quick-create-parent-select');
+  if (quickCreateParentSelect) {
+    quickCreateParentSelect.addEventListener('change', (e) => {
+      const selectedKey = e.target.value;
+      if (selectedKey) {
+        const cpInput = document.getElementById('create-parent-key');
+        if (cpInput) {
+          cpInput.value = selectedKey;
+          // Kích hoạt sự kiện blur để tự động điền SPDA và Công đoạn
+          cpInput.dispatchEvent(new Event('blur'));
+        }
+      }
+    });
+  }
+
+  const btnRefreshCreateParent = document.getElementById('btn-refresh-create-parent');
+  if (btnRefreshCreateParent) {
+    btnRefreshCreateParent.addEventListener('click', () => {
+      const currentFilter = document.getElementById('quick-filter-select')?.value || 'unresolved';
+      loadAndRenderMyIssues(currentFilter, true);
+    });
+  }
+
+  const quickProjectSelect = document.getElementById('quick-project-select');
+  if (quickProjectSelect) {
+    quickProjectSelect.addEventListener('change', (e) => {
+      const selectedKey = e.target.value;
+      if (selectedKey) {
+        const projInput = document.getElementById('task-project-key');
+        if (projInput) {
+          projInput.value = selectedKey;
+        }
+      }
+    });
+  }
+
+  const btnRefreshProjects = document.getElementById('btn-refresh-projects');
+  if (btnRefreshProjects) {
+    btnRefreshProjects.addEventListener('click', () => {
+      loadAndRenderProjects(true);
+    });
+  }
 }
 
 function togglePatInputVisibility(authType) {
@@ -1229,6 +1325,7 @@ async function handleTestConnection() {
   btn.textContent = '🔌 Kiểm Tra Kết Nối (Ping)';
 
   if (res.success && res.user) {
+    AppState.currentUser = res.user;
     resultBox.className = 'alert-box alert-success';
     resultBox.innerHTML = `
       ✅ Kết nối thành công tới Jira!<br>
@@ -1240,6 +1337,10 @@ async function handleTestConnection() {
     const statusText = document.getElementById('user-status-text');
     statusPill.className = 'status-pill status-connected';
     statusText.textContent = res.user.displayName || res.user.name;
+
+    // Tải mới My Issues và Projects
+    loadAndRenderMyIssues('unresolved', true);
+    loadAndRenderProjects(true);
   } else {
     resultBox.className = 'alert-box alert-danger';
     resultBox.innerHTML = `❌ Kết nối thất bại: ${res.error}`;
@@ -1281,4 +1382,129 @@ function saveSettingsToStorage() {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
     chrome.storage.local.set({ jira_settings: AppState.settings });
   }
+}
+
+// ============================================================================
+// CÁC HÀM HELPER CHO QUICK SELECT (MY ISSUES & PROJECTS)
+// ============================================================================
+
+/**
+ * Tải danh sách My Issues từ Jira API và đổ vào các dropdown chọn nhanh.
+ * @param {string} filter - 'unresolved' | 'unlogged' | 'recent'
+ * @param {boolean} forceRefresh
+ */
+async function loadAndRenderMyIssues(filter = 'unresolved', forceRefresh = false) {
+  const jiraBaseUrl = AppState.settings.jiraBaseUrl;
+  if (!jiraBaseUrl) return;
+
+  AppState.currentMyIssuesFilter = filter;
+
+  const authConfig = {
+    authType: AppState.settings.authType,
+    personalAccessToken: AppState.settings.personalAccessToken
+  };
+
+  const parentSelect = document.getElementById('quick-parent-issue-select');
+  const singleSelect = document.getElementById('quick-single-issue-select');
+  const createParentSelect = document.getElementById('quick-create-parent-select');
+
+  const updateSelectPlaceholders = (text) => {
+    if (parentSelect) parentSelect.innerHTML = `<option value="">-- ${text} --</option>`;
+    if (singleSelect) singleSelect.innerHTML = `<option value="">-- ${text} --</option>`;
+    if (createParentSelect) createParentSelect.innerHTML = `<option value="">-- ${text} --</option>`;
+  };
+
+  if (!forceRefresh && AppState.cachedMyIssues && AppState.cachedMyIssues.length > 0) {
+    populateMyIssuesDropdowns(AppState.cachedMyIssues);
+    return;
+  }
+
+  updateSelectPlaceholders('Đang tải danh sách task của bạn...');
+
+  const res = await JiraApi.getMyIssues(jiraBaseUrl, { filter }, authConfig);
+
+  if (res.success && Array.isArray(res.issues)) {
+    AppState.cachedMyIssues = res.issues;
+    populateMyIssuesDropdowns(res.issues);
+  } else {
+    updateSelectPlaceholders('Không tải được danh sách task');
+  }
+}
+
+/**
+ * Đổ danh sách issue vào 3 dropdown chọn nhanh.
+ */
+function populateMyIssuesDropdowns(issues) {
+  const parentSelect = document.getElementById('quick-parent-issue-select');
+  const singleSelect = document.getElementById('quick-single-issue-select');
+  const createParentSelect = document.getElementById('quick-create-parent-select');
+
+  const buildOptions = (placeholder, onlyNonSubtasks = false) => {
+    const opts = [`<option value="">-- ${placeholder} --</option>`];
+    const filtered = onlyNonSubtasks ? issues.filter((it) => !it.isSubtask) : issues;
+
+    for (const issue of filtered) {
+      const shortSummary = issue.summary.length > 36 ? issue.summary.slice(0, 36) + '...' : issue.summary;
+      const statusText = issue.status ? ` (${issue.status})` : '';
+      const hourText = issue.totalHours > 0 ? ` [${issue.totalHours}h]` : '';
+      opts.push(`<option value="${issue.key}">[${issue.key}] ${shortSummary}${statusText}${hourText}</option>`);
+    }
+
+    if (filtered.length === 0) {
+      opts.push('<option value="" disabled>(Không có task nào phù hợp)</option>');
+    }
+    return opts.join('');
+  };
+
+  if (parentSelect) parentSelect.innerHTML = buildOptions('Chọn nhanh Task của bạn (My Issues)');
+  if (singleSelect) singleSelect.innerHTML = buildOptions('Chọn nhanh Task đơn của bạn');
+  if (createParentSelect) createParentSelect.innerHTML = buildOptions('Chọn nhanh Task Cha từ danh sách của bạn', true);
+}
+
+/**
+ * Tải danh sách Projects từ Jira API và đổ vào dropdown chọn nhanh.
+ * @param {boolean} forceRefresh
+ */
+async function loadAndRenderProjects(forceRefresh = false) {
+  const jiraBaseUrl = AppState.settings.jiraBaseUrl;
+  if (!jiraBaseUrl) return;
+
+  const projectSelect = document.getElementById('quick-project-select');
+  if (!projectSelect) return;
+
+  const authConfig = {
+    authType: AppState.settings.authType,
+    personalAccessToken: AppState.settings.personalAccessToken
+  };
+
+  if (!forceRefresh && AppState.cachedProjects && AppState.cachedProjects.length > 0) {
+    populateProjectsDropdown(AppState.cachedProjects);
+    return;
+  }
+
+  projectSelect.innerHTML = '<option value="">-- Đang tải... --</option>';
+
+  const res = await JiraApi.getProjects(jiraBaseUrl, authConfig);
+
+  if (res.success && Array.isArray(res.projects)) {
+    AppState.cachedProjects = res.projects;
+    populateProjectsDropdown(res.projects);
+  } else {
+    projectSelect.innerHTML = '<option value="">-- Không tải được dự án --</option>';
+  }
+}
+
+/**
+ * Đổ danh sách dự án vào dropdown #quick-project-select.
+ */
+function populateProjectsDropdown(projects) {
+  const projectSelect = document.getElementById('quick-project-select');
+  if (!projectSelect) return;
+
+  const opts = ['<option value="">-- Chọn Dự án --</option>'];
+  for (const p of projects) {
+    const label = p.name && p.name !== p.key ? `[${p.key}] ${p.name}` : p.key;
+    opts.push(`<option value="${p.key}">${label}</option>`);
+  }
+  projectSelect.innerHTML = opts.join('');
 }

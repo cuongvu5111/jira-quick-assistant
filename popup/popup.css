@@ -323,6 +323,66 @@ label {
   max-width: 130px;
 }
 
+/* Quick Select Card & Controls */
+.quick-select-card {
+  background-color: #f4f5f7;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.quick-select-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.quick-select-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.quick-select-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form-control-xs {
+  padding: 2px 4px;
+  font-size: 10px;
+  height: 22px;
+  border-radius: 3px;
+  background-color: #ffffff;
+}
+
+.form-control-sm {
+  padding: 4px 6px;
+  font-size: 11px;
+  height: 28px;
+  background-color: #ffffff;
+}
+
+.btn-icon {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-size: 11px;
+  cursor: pointer;
+  background-color: #ffffff;
+  line-height: 1;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.btn-icon:hover {
+  background-color: #ebecf0;
+  border-color: var(--primary-color);
+}
+
 /* Quick Template Bar & Chips */
 .quick-template-bar {
   display: flex;
