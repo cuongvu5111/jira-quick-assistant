@@ -155,13 +155,24 @@ const JiraApi = {
 
       const data = await response.json();
       const rawSubtasks = data.fields?.subtasks || [];
-      const subtasks = rawSubtasks.map((st) => ({
-        id: st.id,
-        key: st.key,
-        summary: st.fields?.summary || '',
-        status: st.fields?.status?.name || '',
-        issueType: st.fields?.issuetype?.name || ''
-      }));
+      let detectedSubtaskTypeId = null;
+      let detectedSubtaskTypeName = null;
+
+      const subtasks = rawSubtasks.map((st) => {
+        const it = st.fields?.issuetype;
+        if (!detectedSubtaskTypeId && it?.id) {
+          detectedSubtaskTypeId = String(it.id);
+          detectedSubtaskTypeName = it.name || '';
+        }
+        return {
+          id: st.id,
+          key: st.key,
+          summary: st.fields?.summary || '',
+          status: st.fields?.status?.name || '',
+          issueType: it?.name || '',
+          issueTypeId: it?.id ? String(it.id) : ''
+        };
+      });
 
       return {
         success: true,
@@ -173,7 +184,9 @@ const JiraApi = {
           issueType: data.fields?.issuetype?.name || '',
           projectKey: data.fields?.project?.key || ''
         },
-        subtasks
+        subtasks,
+        subtaskTypeId: detectedSubtaskTypeId,
+        subtaskTypeName: detectedSubtaskTypeName
       };
     } catch (err) {
       return { success: false, error: err.message };
@@ -323,9 +336,7 @@ const JiraApi = {
       },
       summary: (params.summary || '').trim(),
       description: params.description || 'Task tự động khởi tạo để logwork',
-      issuetype: {
-        name: params.issueType || 'Task'
-      }
+      issuetype: params.issueTypeId ? { id: String(params.issueTypeId) } : { name: params.issueType || 'Task' }
     };
 
     if (params.dueDate) {
@@ -363,11 +374,93 @@ const JiraApi = {
   },
 
   /**
-   * Tạo mới một Sub-task gắn với một Task cha (Parent Issue).
-   * Hỗ trợ đầy đủ due date, assignee, Mã SPDA và Công đoạn.
+   * Tự động truy vấn và tìm ID chính xác của loại Issue Sub-task trong Jira.
+   * Ưu tiên 1: createmeta của project (tìm issuetype có it.subtask === true).
+   * Ưu tiên 2: endpoint toàn cục /rest/api/2/issuetype (tìm issuetype có subtask === true).
    *
    * @param {string} baseUrl
-   * @param {Object} params - { parentKey: string, projectKey?: string, summary: string, description?: string, dueDate?: string, assignee?: string, customFields?: Object }
+   * @param {string} projectKey
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, id?: string, name?: string, error?: string}>}
+   */
+  async getSubtaskIssueType(baseUrl, projectKey, authConfig = {}) {
+    const cleanUrl = this.normalizeBaseUrl(baseUrl);
+    const pKey = (projectKey || '').trim().toUpperCase();
+
+    // 1. Thử lấy từ createmeta của project
+    if (pKey) {
+      try {
+        const metaUrl = `${cleanUrl}/rest/api/2/issue/createmeta?projectKeys=${pKey}`;
+        const response = await fetch(metaUrl, {
+          method: 'GET',
+          headers: this.buildHeaders(authConfig),
+          credentials: 'include'
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const project = (data.projects || []).find((p) => p.key === pKey) || data.projects?.[0];
+          if (project && Array.isArray(project.issuetypes)) {
+            const subtaskType = project.issuetypes.find((it) => it.subtask === true) ||
+              project.issuetypes.find((it) => /sub[- ]?task|nhiệm vụ con/i.test(it.name));
+
+            if (subtaskType && subtaskType.id) {
+              return {
+                success: true,
+                id: String(subtaskType.id),
+                name: subtaskType.name || 'Sub-task'
+              };
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi khi lấy subtask issuetype từ createmeta:', err);
+      }
+    }
+
+    // 2. Thử lấy từ danh sách issuetype toàn cục của Jira
+    try {
+      const issueTypesUrl = `${cleanUrl}/rest/api/2/issuetype`;
+      const response = await fetch(issueTypesUrl, {
+        method: 'GET',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const allTypes = await response.json();
+        if (Array.isArray(allTypes)) {
+          const subtaskType = allTypes.find((it) => it.subtask === true) ||
+            allTypes.find((it) => /sub[- ]?task|nhiệm vụ con/i.test(it.name));
+
+          if (subtaskType && subtaskType.id) {
+            return {
+              success: true,
+              id: String(subtaskType.id),
+              name: subtaskType.name || 'Sub-task'
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Lỗi khi lấy issuetype toàn cục:', err);
+    }
+
+    return {
+      success: false,
+      id: null,
+      name: 'Sub-task',
+      error: 'Không tìm thấy loại issue sub-task'
+    };
+  },
+
+  /**
+   * Tạo mới một Sub-task gắn với một Task cha (Parent Issue).
+   * Hỗ trợ đầy đủ due date, assignee, Mã SPDA và Công đoạn.
+   * Tự động lấy chính xác ID của issuetype (hoặc thử theo tên chuẩn) để tương thích 100% với Jira Server/Cloud.
+   *
+   * @param {string} baseUrl
+   * @param {Object} params - { parentKey: string, projectKey?: string, summary: string, description?: string, dueDate?: string, assignee?: string, customFields?: Object, issueTypeId?: string, issueTypeName?: string }
    * @param {Object} authConfig
    * @returns {Promise<{success: boolean, createdKey?: string, error?: string}>}
    */
@@ -378,14 +471,33 @@ const JiraApi = {
     const parentKey = (params.parentKey || '').trim().toUpperCase();
     const projectKey = (params.projectKey || parentKey.split('-')[0] || '').trim().toUpperCase();
 
-    const makeBody = (typeName) => {
+    // Tự động tìm ID của loại Sub-task nếu chưa truyền vào
+    let subtaskTypeId = params.issueTypeId;
+    let subtaskTypeName = params.issueTypeName;
+
+    if (!subtaskTypeId) {
+      const detectedType = await this.getSubtaskIssueType(cleanUrl, projectKey, authConfig);
+      if (detectedType.success && detectedType.id) {
+        subtaskTypeId = detectedType.id;
+        subtaskTypeName = detectedType.name;
+      }
+    }
+
+    const makeBody = (targetType) => {
       const fields = {
         project: { key: projectKey },
         parent: { key: parentKey },
         summary: (params.summary || '').trim(),
-        description: params.description || 'Sub-task thực hiện công việc',
-        issuetype: { name: typeName }
+        description: params.description || 'Sub-task thực hiện công việc'
       };
+
+      if (targetType && targetType.id) {
+        fields.issuetype = { id: String(targetType.id) };
+      } else if (targetType && targetType.name) {
+        fields.issuetype = { name: targetType.name };
+      } else {
+        fields.issuetype = { name: 'Sub-task' };
+      }
 
       if (params.dueDate) {
         fields.duedate = params.dueDate;
@@ -401,21 +513,35 @@ const JiraApi = {
     };
 
     try {
-      // Thử với tên chuẩn 'Sub-task'
-      let response = await fetch(endpoint, {
-        method: 'POST',
-        headers: this.buildHeaders(authConfig),
-        credentials: 'include',
-        body: JSON.stringify(makeBody('Sub-task'))
-      });
+      // 1. Thử gửi với ID đã phát hiện
+      if (subtaskTypeId) {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: this.buildHeaders(authConfig),
+          credentials: 'include',
+          body: JSON.stringify(makeBody({ id: subtaskTypeId }))
+        });
 
-      // Nếu lỗi 400 có thể do Jira quy định tên là 'Subtask'
-      if (!response.ok && response.status === 400) {
+        if (res.ok) {
+          const data = await res.json();
+          return { success: true, createdKey: data.key };
+        }
+
+        // Nếu thất bại do lý do khác 400 (hoặc lỗi không liên quan issuetype), trả về lỗi
+        const errText = await this.parseErrorMessage(res);
+        if (!errText.toLowerCase().includes('issuetype')) {
+          return { success: false, error: errText };
+        }
+      }
+
+      // 2. Fallback thử lần lượt các tên loại Sub-task thông dụng
+      const candidateNames = [subtaskTypeName, 'Sub-task', 'Subtask', 'Nhiệm vụ con'].filter(Boolean);
+      for (const candName of candidateNames) {
         const retryRes = await fetch(endpoint, {
           method: 'POST',
           headers: this.buildHeaders(authConfig),
           credentials: 'include',
-          body: JSON.stringify(makeBody('Subtask'))
+          body: JSON.stringify(makeBody({ name: candName }))
         });
         if (retryRes.ok) {
           const data = await retryRes.json();
@@ -423,13 +549,16 @@ const JiraApi = {
         }
       }
 
-      if (!response.ok) {
-        const errorMsg = await this.parseErrorMessage(response);
-        return { success: false, error: errorMsg };
-      }
+      // 3. Nếu vẫn không được, gửi lần cuối để trả về thông điệp lỗi rõ ràng nhất
+      const fallbackRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include',
+        body: JSON.stringify(makeBody({ name: 'Sub-task' }))
+      });
 
-      const data = await response.json();
-      return { success: true, createdKey: data.key };
+      const errorMsg = await this.parseErrorMessage(fallbackRes);
+      return { success: false, error: errorMsg };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -490,11 +619,23 @@ const JiraApi = {
         }
       }
 
+      let subtaskTypeId = null;
+      let subtaskTypeName = null;
+      if (Array.isArray(fields.subtasks) && fields.subtasks.length > 0) {
+        const firstSt = fields.subtasks[0];
+        if (firstSt.fields?.issuetype?.id) {
+          subtaskTypeId = String(firstSt.fields.issuetype.id);
+          subtaskTypeName = firstSt.fields.issuetype.name || '';
+        }
+      }
+
       return {
         success: true,
         spda,
         congDoan,
-        customFields
+        customFields,
+        subtaskTypeId,
+        subtaskTypeName
       };
     } catch (err) {
       return { success: false, error: err.message };

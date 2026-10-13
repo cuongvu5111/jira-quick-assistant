@@ -995,8 +995,11 @@ async function handleBatchCreateSubtasks() {
   const assignMe = document.getElementById('subtask-assignee-me')?.checked;
   const assigneeName = (assignMe && AppState.currentUser?.name) ? AppState.currentUser.name : undefined;
 
-  // Dò tìm customfield IDs từ parent task hoặc createmeta
+  // Dò tìm customfield IDs và Sub-task Issue Type từ parent task hoặc createmeta
   let customFieldsPayload = {};
+  let subtaskTypeId = null;
+  let subtaskTypeName = null;
+
   const detected = await JiraApi.detectCustomFieldsFromIssue(jiraBaseUrl, parentKey, authConfig);
   if (detected.success) {
     if (detected.spda?.key) {
@@ -1004,6 +1007,10 @@ async function handleBatchCreateSubtasks() {
     }
     if (detected.congDoan?.key) {
       customFieldsPayload[detected.congDoan.key] = { value: congDoan };
+    }
+    if (detected.subtaskTypeId) {
+      subtaskTypeId = detected.subtaskTypeId;
+      subtaskTypeName = detected.subtaskTypeName;
     }
   }
 
@@ -1017,6 +1024,15 @@ async function handleBatchCreateSubtasks() {
       if (meta.congDoanField?.key) {
         customFieldsPayload[meta.congDoanField.key] = { value: congDoan };
       }
+    }
+  }
+
+  // Nếu chưa có subtaskTypeId từ parent issue, truy vấn Sub-task type qua getSubtaskIssueType
+  if (!subtaskTypeId) {
+    const typeInfo = await JiraApi.getSubtaskIssueType(jiraBaseUrl, projectKey, authConfig);
+    if (typeInfo.success && typeInfo.id) {
+      subtaskTypeId = typeInfo.id;
+      subtaskTypeName = typeInfo.name;
     }
   }
 
@@ -1048,7 +1064,9 @@ async function handleBatchCreateSubtasks() {
       description: `Sub-task tự động tạo cho ngày làm việc (mỗi task log tối đa 8h)`,
       dueDate: taskDueDate,
       assignee: assigneeName,
-      customFields: customFieldsPayload
+      customFields: customFieldsPayload,
+      issueTypeId: subtaskTypeId,
+      issueTypeName: subtaskTypeName
     }, authConfig);
 
     if (res.success && res.createdKey) {
