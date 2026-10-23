@@ -21,7 +21,9 @@ const AppState = {
     recentIssues: [],
     lastProjectKey: '',
     lastParentKey: '',
-    autoResolveTask: true
+    autoResolveTask: true,
+    groqApiKey: '',
+    groqModel: 'openai/gpt-oss-120b'
   },
   timeMode: 'week', // 'week' | 'month'
   targetMode: 'parent-subtasks', // 'parent-subtasks' | 'single' | 'multi-keys'
@@ -216,6 +218,21 @@ function applySettingsToUI() {
 
   const holidaysInput = document.getElementById('excluded-holidays');
   if (holidaysInput) holidaysInput.value = excludedHolidays || '';
+
+  // Cấu hình Groq AI
+  const groqApiKeyInput = document.getElementById('groq-api-key');
+  if (groqApiKeyInput) groqApiKeyInput.value = AppState.settings.groqApiKey || '';
+
+  // Tự động chuyển model lỗi 404 cũ sang model mới
+  if (AppState.settings.groqModel === 'llama-3.3-70b-versatile' || !AppState.settings.groqModel) {
+    AppState.settings.groqModel = 'openai/gpt-oss-120b';
+    saveSettingsToStorage();
+  }
+
+  const groqModelSelect = document.getElementById('groq-model');
+  if (groqModelSelect && AppState.settings.groqModel) {
+    groqModelSelect.value = AppState.settings.groqModel;
+  }
 
   // Logwork tab
   const timeSpentInput = document.getElementById('log-time-spent');
@@ -414,6 +431,22 @@ function initEventHandlers() {
           document.getElementById('subtask-cong-doan').value = detected.congDoan.value.value;
         }
       }
+
+      // Tự động điền tiêu đề Task Cha vào ô AI nếu ô này đang trống
+      const aiTitleInput = document.getElementById('ai-parent-title');
+      if (aiTitleInput && !aiTitleInput.value) {
+        const found = AppState.cachedMyIssues.find((it) => it.key === key);
+        if (found && found.summary) {
+          aiTitleInput.value = found.summary;
+        } else {
+          try {
+            const issueData = await JiraApi.getIssueWithSubtasks(AppState.settings.jiraBaseUrl, key, authConfig);
+            if (issueData.success && issueData.issue?.fields?.summary) {
+              aiTitleInput.value = issueData.issue.fields.summary;
+            }
+          } catch (_) {}
+        }
+      }
     }
   });
 
@@ -433,6 +466,22 @@ function initEventHandlers() {
   document.getElementById('btn-gen-week-subtasks').addEventListener('click', generateWeekSubtasksTemplate);
   document.getElementById('btn-gen-month-subtasks').addEventListener('click', generateMonthSubtasksTemplate);
 
+  // Tab 2: Nút sinh Sub-task bằng AI (Groq) & Link sang Cài đặt
+  const btnAiGen = document.getElementById('btn-ai-generate-subtasks');
+  if (btnAiGen) btnAiGen.addEventListener('click', handleAiGenerateSubtasks);
+
+  const linkGotoAi = document.getElementById('link-goto-ai-settings');
+  if (linkGotoAi) {
+    linkGotoAi.addEventListener('click', (e) => {
+      e.preventDefault();
+      const settingsTabBtn = document.querySelector('.tab-btn[data-tab="tab-settings"]');
+      if (settingsTabBtn) settingsTabBtn.click();
+      setTimeout(() => {
+        document.getElementById('groq-api-key')?.focus();
+      }, 100);
+    });
+  }
+
   // Tab 2: Nút bắt đầu tạo nhiều sub-task
   document.getElementById('btn-batch-create-subtasks').addEventListener('click', handleBatchCreateSubtasks);
 
@@ -446,6 +495,33 @@ function initEventHandlers() {
   });
   document.getElementById('btn-test-connection').addEventListener('click', handleTestConnection);
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings);
+
+  // Tab 3: Nút toggle ẩn/hiện Groq API Key & Nút kiểm tra kết nối Groq
+  const btnToggleGroq = document.getElementById('btn-toggle-groq-key');
+  if (btnToggleGroq) {
+    btnToggleGroq.addEventListener('click', () => {
+      const keyInput = document.getElementById('groq-api-key');
+      if (keyInput) {
+        if (keyInput.type === 'password') {
+          keyInput.type = 'text';
+          btnToggleGroq.textContent = '🔒';
+        } else {
+          keyInput.type = 'password';
+          btnToggleGroq.textContent = '👁️';
+        }
+      }
+    });
+  }
+
+  const btnTestGroq = document.getElementById('btn-test-groq-connection');
+  if (btnTestGroq) {
+    btnTestGroq.addEventListener('click', handleTestGroqConnection);
+  }
+
+  const btnFetchGroq = document.getElementById('btn-fetch-groq-models');
+  if (btnFetchGroq) {
+    btnFetchGroq.addEventListener('click', handleFetchGroqModels);
+  }
 
   // ==========================================================================
   // Sự kiện cho các dropdown Quick Select (My Issues & Projects)
@@ -503,6 +579,13 @@ function initEventHandlers() {
           cpInput.value = selectedKey;
           // Kích hoạt sự kiện blur để tự động điền SPDA và Công đoạn
           cpInput.dispatchEvent(new Event('blur'));
+        }
+
+        // Tự động điền tiêu đề Task Cha cho khối AI
+        const found = AppState.cachedMyIssues.find((it) => it.key === selectedKey);
+        const aiTitleInput = document.getElementById('ai-parent-title');
+        if (found && found.summary && aiTitleInput) {
+          aiTitleInput.value = found.summary;
         }
       }
     });
@@ -1064,6 +1147,189 @@ function generateMonthSubtasksTemplate() {
 }
 
 /**
+ * Tự động phân rã và sinh danh sách Sub-task bằng Groq AI
+ */
+async function handleAiGenerateSubtasks() {
+  const apiKey = (AppState.settings.groqApiKey || document.getElementById('groq-api-key')?.value || '').trim();
+  const statusBox = document.getElementById('ai-gen-status');
+  const btn = document.getElementById('btn-ai-generate-subtasks');
+  const btnText = document.getElementById('ai-btn-text');
+  const spinner = document.getElementById('ai-btn-spinner');
+
+  if (!apiKey) {
+    statusBox.className = 'ai-status-msg alert-warning';
+    statusBox.innerHTML = '⚠️ Chưa cấu hình Groq API Key! Vui lòng <a href="#" id="inline-link-config-key" style="color:var(--primary-color); font-weight:600;">bấm vào đây</a> để nhập Key miễn phí.';
+    statusBox.classList.remove('hidden');
+
+    const inlineLink = document.getElementById('inline-link-config-key');
+    if (inlineLink) {
+      inlineLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        const settingsTabBtn = document.querySelector('.tab-btn[data-tab="tab-settings"]');
+        if (settingsTabBtn) settingsTabBtn.click();
+        setTimeout(() => document.getElementById('groq-api-key')?.focus(), 100);
+      });
+    }
+    return;
+  }
+
+  let parentTitle = document.getElementById('ai-parent-title')?.value.trim();
+  const parentKey = document.getElementById('create-parent-key')?.value.trim();
+
+  // Nếu ô tiêu đề còn trống nhưng người dùng đã nhập Parent Key -> thử fetch summary từ Jira
+  if (!parentTitle && parentKey && AppState.settings.jiraBaseUrl) {
+    statusBox.className = 'ai-status-msg';
+    statusBox.textContent = `⏳ Đang lấy tiêu đề của ${parentKey} từ Jira...`;
+    statusBox.classList.remove('hidden');
+
+    const authConfig = {
+      authType: AppState.settings.authType,
+      personalAccessToken: AppState.settings.personalAccessToken
+    };
+    try {
+      const issueData = await JiraApi.getIssueWithSubtasks(AppState.settings.jiraBaseUrl, parentKey, authConfig);
+      if (issueData.success && issueData.issue?.fields?.summary) {
+        parentTitle = issueData.issue.fields.summary;
+        const aiTitleInput = document.getElementById('ai-parent-title');
+        if (aiTitleInput) aiTitleInput.value = parentTitle;
+      }
+    } catch (_) {}
+  }
+
+  if (!parentTitle) {
+    statusBox.className = 'ai-status-msg alert-warning';
+    statusBox.textContent = '⚠️ Vui lòng nhập hoặc chọn tiêu đề Task Cha để AI phân rã!';
+    statusBox.classList.remove('hidden');
+    document.getElementById('ai-parent-title')?.focus();
+    return;
+  }
+
+  const count = parseInt(document.getElementById('ai-subtask-count')?.value, 10) || 5;
+  const role = document.getElementById('ai-subtask-role')?.value || 'all';
+  const model = AppState.settings.groqModel || document.getElementById('groq-model')?.value || 'openai/gpt-oss-120b';
+
+  btn.disabled = true;
+  btnText.textContent = 'Đang suy nghĩ...';
+  spinner.classList.remove('hidden');
+  statusBox.className = 'ai-status-msg';
+  statusBox.textContent = `⏳ Đang nhờ AI (${model}) phân rã thành ${count} Sub-tasks...`;
+  statusBox.classList.remove('hidden');
+
+  try {
+    const res = await AiService.generateSubtasks({
+      apiKey,
+      model,
+      parentTitle,
+      count,
+      role
+    });
+
+    if (res.success && Array.isArray(res.subtasks) && res.subtasks.length > 0) {
+      const textarea = document.getElementById('create-subtask-list');
+      textarea.value = res.subtasks.join('\n');
+
+      statusBox.className = 'ai-status-msg alert-success';
+      statusBox.textContent = `✨ Đã tạo thành công ${res.subtasks.length} Sub-task bằng AI! Bạn có thể xem lại hoặc chỉnh sửa bên dưới trước khi bấm Tạo.`;
+    } else {
+      statusBox.className = 'ai-status-msg alert-danger';
+      statusBox.textContent = `❌ ${res.error || 'Không thể tạo sub-task'}`;
+    }
+  } catch (err) {
+    statusBox.className = 'ai-status-msg alert-danger';
+    statusBox.textContent = `❌ Lỗi ngoại lệ: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = '🤖 Sinh Sub-task bằng AI';
+    spinner.classList.add('hidden');
+  }
+}
+
+/**
+ * Tải danh sách các Model khả dụng từ Groq API
+ */
+async function handleFetchGroqModels() {
+  const apiKey = (AppState.settings.groqApiKey || document.getElementById('groq-api-key')?.value || '').trim();
+  const resultBox = document.getElementById('groq-test-result');
+  const btnFetch = document.getElementById('btn-fetch-groq-models');
+
+  if (!apiKey) {
+    resultBox.className = 'alert-box alert-warning';
+    resultBox.textContent = '⚠️ Vui lòng nhập Groq API Key trước khi tải danh sách Model!';
+    resultBox.classList.remove('hidden');
+    return;
+  }
+
+  const origText = btnFetch ? btnFetch.textContent : '';
+  if (btnFetch) btnFetch.textContent = '⏳ Đang tải...';
+
+  resultBox.className = 'alert-box';
+  resultBox.textContent = '⏳ Đang tải danh sách model từ Groq API...';
+  resultBox.classList.remove('hidden');
+
+  const res = await AiService.fetchAvailableModels(apiKey);
+  if (btnFetch) btnFetch.textContent = origText;
+
+  if (res.success && Array.isArray(res.models) && res.models.length > 0) {
+    const modelSelect = document.getElementById('groq-model');
+    if (modelSelect) {
+      const currentVal = modelSelect.value;
+      modelSelect.innerHTML = '';
+      res.models.forEach((m) => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        modelSelect.appendChild(opt);
+      });
+
+      // Giữ nguyên lựa chọn nếu model đó vẫn tồn tại, ngược lại chọn model đầu tiên
+      const exists = res.models.some((m) => m.id === currentVal);
+      if (exists) {
+        modelSelect.value = currentVal;
+      } else {
+        modelSelect.value = res.models[0].id;
+        AppState.settings.groqModel = res.models[0].id;
+        saveSettingsToStorage();
+      }
+    }
+
+    resultBox.className = 'alert-box alert-success';
+    resultBox.textContent = `✅ Đã tải thành công ${res.models.length} model khả dụng từ Groq!`;
+  } else {
+    resultBox.className = 'alert-box alert-danger';
+    resultBox.textContent = `❌ ${res.error || 'Không thể tải danh sách model'}`;
+  }
+}
+
+/**
+ * Kiểm tra kết nối Groq API Key trong Tab Cài đặt
+ */
+async function handleTestGroqConnection() {
+  const apiKey = document.getElementById('groq-api-key')?.value.trim();
+  const model = document.getElementById('groq-model')?.value || 'openai/gpt-oss-120b';
+  const resultBox = document.getElementById('groq-test-result');
+
+  if (!apiKey) {
+    resultBox.className = 'alert-box alert-warning';
+    resultBox.textContent = '⚠️ Vui lòng nhập Groq API Key trước khi kiểm tra!';
+    resultBox.classList.remove('hidden');
+    return;
+  }
+
+  resultBox.className = 'alert-box';
+  resultBox.textContent = '⏳ Đang kiểm tra kết nối tới Groq Cloud API...';
+  resultBox.classList.remove('hidden');
+
+  const res = await AiService.testConnection(apiKey, model);
+  if (res.success) {
+    resultBox.className = 'alert-box alert-success';
+    resultBox.textContent = `✅ Kết nối Groq API thành công! (Model: ${res.modelUsed})`;
+  } else {
+    resultBox.className = 'alert-box alert-danger';
+    resultBox.textContent = `❌ ${res.error}`;
+  }
+}
+
+/**
  * Thực thi tạo hàng loạt Sub-task cho Parent Issue
  */
 async function handleBatchCreateSubtasks() {
@@ -1386,11 +1652,15 @@ function handleSaveSettings() {
   const authType = document.querySelector('input[name="auth-type"]:checked').value;
   const pat = document.getElementById('personal-access-token').value.trim();
   const holidays = document.getElementById('excluded-holidays').value.trim();
+  const groqApiKey = document.getElementById('groq-api-key')?.value.trim() || '';
+  const groqModel = document.getElementById('groq-model')?.value || 'llama-3.3-70b-versatile';
 
   AppState.settings.jiraBaseUrl = url;
   AppState.settings.authType = authType;
   AppState.settings.personalAccessToken = pat;
   AppState.settings.excludedHolidays = holidays;
+  AppState.settings.groqApiKey = groqApiKey;
+  AppState.settings.groqModel = groqModel;
 
   saveSettingsToStorage();
 

@@ -753,13 +753,37 @@ const JiraApi = {
       }
 
       // 2. Tìm transition tương ứng với Resolve / Done / Closed / Hoàn thành
-      const targetRegex = /(resolve|resolved|done|close|closed|hoàn thành|đóng|finish)/i;
-      const targetTransition = transitions.find((t) => {
-        const nameMatch = t.name && targetRegex.test(t.name);
-        const toMatch = t.to && t.to.name && targetRegex.test(t.to.name);
-        const categoryMatch = t.to && t.to.statusCategory && t.to.statusCategory.key === 'done';
-        return nameMatch || toMatch || categoryMatch;
-      });
+      // Danh sách từ khóa loại trừ: tuyệt đối không chọn các transition hủy/từ chối dù thuộc statusCategory 'done'
+      const excludeRegex = /(cancel|cancelled|hủy|reject|rejected|won't|wont|duplicate|discard|đình chỉ|bỏ qua)/i;
+
+      const getTransitionScore = (t) => {
+        const name = (t.name || '').trim();
+        const toName = (t.to?.name || '').trim();
+        const combined = `${name} ${toName}`;
+
+        // Bỏ qua nếu tên transition hoặc status đích mang ý nghĩa hủy/từ chối
+        if (excludeRegex.test(name) || excludeRegex.test(toName)) {
+          return -1;
+        }
+
+        // Ưu tiên 1: Resolve / Giải quyết (chính xác nhất cho hành động Resolve)
+        if (/(resolve|resolved|giải quyết)/i.test(combined)) return 4;
+        // Ưu tiên 2: Done / Hoàn thành / Complete / Finish
+        if (/(done|hoàn thành|complete|completed|finish|finished)/i.test(combined)) return 3;
+        // Ưu tiên 3: Close / Đóng
+        if (/(close|closed|đóng)/i.test(combined)) return 2;
+        // Ưu tiên 4: Trạng thái đích thuộc nhóm 'done' trong workflow Jira
+        if (t.to?.statusCategory?.key === 'done') return 1;
+
+        return 0;
+      };
+
+      const sortedTransitions = transitions
+        .map((t) => ({ transition: t, score: getTransitionScore(t) }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      const targetTransition = sortedTransitions[0]?.transition;
 
       if (!targetTransition) {
         return {

@@ -277,8 +277,48 @@
           <span class="form-hint">Sub-tasks sẽ được gắn trực tiếp vào task cha này.</span>
         </div>
 
+        <!-- Khối AI Tạo Sub-task thông minh bằng Groq -->
+        <div class="ai-generator-card">
+          <div class="ai-card-header">
+            <div class="ai-card-title">
+              <span class="ai-sparkle-icon">✨</span>
+              <strong>Sinh Sub-task tự động bằng AI (Groq Cloud)</strong>
+            </div>
+            <a href="#" id="link-goto-ai-settings" class="ai-settings-link" title="Cài đặt Groq API Key">⚙️ Cấu hình Key</a>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 6px;">
+            <label for="ai-parent-title" style="font-size: 11px;">Tiêu đề Task Cha (AI sẽ dựa vào đây để phân rã):</label>
+            <input type="text" id="ai-parent-title" class="form-control form-control-sm" placeholder="Tự động lấy khi chọn Task Cha hoặc tự nhập tại đây...">
+          </div>
+
+          <div class="form-row form-row-2col" style="margin-bottom: 6px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="ai-subtask-count" style="font-size: 11px;">Số lượng Sub-task:</label>
+              <input type="number" id="ai-subtask-count" class="form-control form-control-sm" value="5" min="1" max="20">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="ai-subtask-role" style="font-size: 11px;">Định hướng công việc:</label>
+              <select id="ai-subtask-role" class="form-control form-control-sm">
+                <option value="all">Quy trình chuẩn (Dev + Test + Deploy)</option>
+                <option value="dev">Lập trình & Phát triển chức năng</option>
+                <option value="test">Kiểm thử & Báo cáo lỗi (QA/QC)</option>
+                <option value="analysis">Phân tích yêu cầu & Thiết kế</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="ai-action-bar">
+            <button type="button" id="btn-ai-generate-subtasks" class="btn btn-ai btn-sm btn-block">
+              <span id="ai-btn-text">🤖 Sinh Sub-task bằng AI</span>
+              <span id="ai-btn-spinner" class="spinner-sm hidden"></span>
+            </button>
+          </div>
+          <div id="ai-gen-status" class="ai-status-msg hidden"></div>
+        </div>
+
         <div class="quick-template-bar">
-          <span class="quick-title">⚡ Mẫu tự động:</span>
+          <span class="quick-title">⚡ Hoặc chọn mẫu tự động:</span>
           <button type="button" id="btn-gen-week-subtasks" class="btn-chip">Sinh 5 Sub-task theo tuần</button>
           <button type="button" id="btn-gen-month-subtasks" class="btn-chip">Sinh Sub-task cả tháng</button>
         </div>
@@ -449,6 +489,46 @@
         <textarea id="excluded-holidays" class="form-control" rows="2" placeholder="Ví dụ: 2026-10-20, 2026-09-02 (hoặc 20/10/2026)"></textarea>
       </div>
 
+      <!-- Section Cấu hình Groq AI -->
+      <div class="settings-section-card">
+        <div class="settings-section-header">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:14px;">🤖</span>
+            <strong>Cấu hình AI Assistant (Groq Cloud)</strong>
+          </div>
+          <span class="badge badge-ai">Miễn phí</span>
+        </div>
+        
+        <div class="form-group">
+          <label for="groq-api-key">Groq API Key: <span class="required">*</span></label>
+          <div class="input-with-button">
+            <input type="password" id="groq-api-key" class="form-control" placeholder="Dán mã gsk_xxxxxxxxxxxxxxxxxxxx">
+            <button type="button" id="btn-toggle-groq-key" class="btn-input-action" title="Ẩn/Hiện API Key">👁️</button>
+          </div>
+          <span class="form-hint">Nhận API Key miễn phí (không cần thẻ tín dụng) tại <a href="https://console.groq.com/keys" target="_blank" style="color:var(--primary-color); font-weight:600;">console.groq.com/keys</a></span>
+        </div>
+
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label for="groq-model" style="margin-bottom:0;">Model AI:</label>
+            <button id="btn-fetch-groq-models" type="button" class="btn-text" style="font-size:11px; padding:0; cursor:pointer;" title="Tải danh sách model mới nhất từ Groq">🔄 Tải danh sách Model</button>
+          </div>
+          <select id="groq-model" class="form-control">
+            <option value="openai/gpt-oss-120b">GPT OSS 120B (Khuyên dùng - Cực thông minh)</option>
+            <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Tối ưu Tiếng Việt)</option>
+            <option value="openai/gpt-oss-20b">GPT OSS 20B (Phản hồi siêu tốc)</option>
+            <option value="allam-2-7b">Allam 2 7B</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <button id="btn-test-groq-connection" type="button" class="btn btn-secondary btn-sm">
+            ⚡ Kiểm Tra Kết Nối Groq API
+          </button>
+          <div id="groq-test-result" class="alert-box hidden" style="margin-top: 8px;"></div>
+        </div>
+      </div>
+
       <div id="connection-test-result" class="alert-box hidden"></div>
 
       <div class="action-footer-buttons">
@@ -461,7 +541,7 @@
       </div>
 
       <div class="app-footer-credit" style="text-align: center; margin-top: 14px; font-size: 11px; color: var(--text-sub); border-top: 1px solid var(--border-color); padding-top: 8px;">
-        <span>Jira Quick Assistant v2.0 • Tác giả: <strong>cuongvm.it4</strong></span>
+        <span>Jira Quick Assistant v2.1 • Tác giả: <strong>cuongvm.it4</strong></span>
       </div>
     </section>
 
@@ -470,6 +550,7 @@
   <!-- Script Modules -->
   <script src="../scripts/date-utils.js"></script>
   <script src="../scripts/jira-api.js"></script>
+  <script src="../scripts/ai-service.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Jira Quick Assistant - Task & Logwork",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "cuongvm.it4",
   "description": "Tự động hóa tạo task định kỳ và logwork hàng loạt hàng tháng trên Jira Server / Data Center.",
   "permissions": [
