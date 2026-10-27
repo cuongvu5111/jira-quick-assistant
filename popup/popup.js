@@ -14,7 +14,8 @@ const AppState = {
     jiraBaseUrl: 'https://cntt.vnpt.vn',
     authType: 'cookie',
     personalAccessToken: '',
-    defaultTimeSpent: '8h',
+    defaultTimeSpent: '1h',
+    hasCustomTimeSpent: false,
     defaultStartTime: '09:00',
     defaultComment: 'Làm việc theo kế hoạch',
     excludedHolidays: '',
@@ -31,8 +32,9 @@ const AppState = {
   currentWeeks: [],
   selectedWeekIndex: 0,
   activeWorkingDays: [],
-  loadedSubtasks: [], // Array<{ key, summary, status, totalSeconds, totalHours, isAt8hCap, loggedDates }>
-  taskMapping: [], // Array<{ day, issueKey, issueSummary, status, hoursToLog, skip }>
+  loadedSubtasks: [], // Array<{ key, summary, status, dueDate, totalSeconds, totalHours, isAt8hCap, loggedDates, worklogs }>
+  singleIssueWorklogs: { loggedDates: new Set(), totalHours: 0, worklogs: [] },
+  taskMapping: [], // Array<{ day, issueKey, issueSummary, status, hoursToLog, skip, worklogsToDelete }>
   isRunningBatch: false,
   cachedProjects: [],
   cachedMyIssues: [],
@@ -187,6 +189,10 @@ async function loadSettingsFromStorage() {
           if (!AppState.settings.jiraBaseUrl) {
             AppState.settings.jiraBaseUrl = 'https://cntt.vnpt.vn';
           }
+          // Chuyển mặc định sang 1h theo cấu hình mới nếu trước đó chưa từng tùy chỉnh riêng
+          if (!result.jira_settings.hasCustomTimeSpent) {
+            AppState.settings.defaultTimeSpent = '1h';
+          }
           applySettingsToUI();
         } else {
           AppState.settings.jiraBaseUrl = 'https://cntt.vnpt.vn';
@@ -236,7 +242,10 @@ function applySettingsToUI() {
 
   // Logwork tab
   const timeSpentInput = document.getElementById('log-time-spent');
-  if (timeSpentInput && defaultTimeSpent) timeSpentInput.value = defaultTimeSpent;
+  if (timeSpentInput) {
+    timeSpentInput.value = defaultTimeSpent || '1h';
+    syncTimePresetChipsUI(timeSpentInput.value);
+  }
 
   const startTimeInput = document.getElementById('log-start-time');
   if (startTimeInput && defaultStartTime) startTimeInput.value = defaultStartTime;
@@ -375,6 +384,37 @@ function initEventHandlers() {
     buildTaskMappingAndSummary();
   });
 
+  // Thay đổi số giờ/ngày & các nút chọn nhanh 1h (Daily) / 8h
+  const timeSpentInput = document.getElementById('log-time-spent');
+  if (timeSpentInput) {
+    timeSpentInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      syncTimePresetChipsUI(val);
+      if (val) {
+        AppState.settings.defaultTimeSpent = val;
+        AppState.settings.hasCustomTimeSpent = true;
+        saveSettingsToStorage();
+      }
+      buildTaskMappingAndSummary();
+    });
+  }
+
+  const btnPreset1h = document.getElementById('btn-preset-1h');
+  const btnPreset8h = document.getElementById('btn-preset-8h');
+  [btnPreset1h, btnPreset8h].forEach((btn) => {
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const hours = btn.getAttribute('data-hours') || '1h';
+      const input = document.getElementById('log-time-spent');
+      if (input) input.value = hours;
+      syncTimePresetChipsUI(hours);
+      AppState.settings.defaultTimeSpent = hours;
+      AppState.settings.hasCustomTimeSpent = true;
+      saveSettingsToStorage();
+      buildTaskMappingAndSummary();
+    });
+  });
+
   // Checkbox bỏ qua ngày đã log / đủ 8h
   document.getElementById('skip-logged-days').addEventListener('change', () => {
     buildTaskMappingAndSummary();
@@ -403,8 +443,12 @@ function initEventHandlers() {
     }
   });
 
-  // Nút bắt đầu Logwork
+  // Nút bắt đầu Logwork & Nút Xóa Logwork hàng loạt
   document.getElementById('btn-start-logwork').addEventListener('click', handleStartLogwork);
+  const btnBatchDelete = document.getElementById('btn-batch-delete-logwork');
+  if (btnBatchDelete) {
+    btnBatchDelete.addEventListener('click', handleBatchDeleteWorklogs);
+  }
 
   // Tab 2: Tự động bóc tách URL ở ô Create Parent Key
   const createParentInput = document.getElementById('create-parent-key');
@@ -462,7 +506,15 @@ function initEventHandlers() {
     });
   }
 
-  // Tab 2: Nút sinh mẫu 5 Sub-tasks theo tuần
+  // Tab 2: Nút sinh mẫu Sub-tasks Daily & Công việc theo tuần/tháng
+  const btnGenDailyWeek = document.getElementById('btn-gen-daily-week');
+  if (btnGenDailyWeek) {
+    btnGenDailyWeek.addEventListener('click', () => generateDailySubtasksTemplate('week'));
+  }
+  const btnGenDailyMonth = document.getElementById('btn-gen-daily-month');
+  if (btnGenDailyMonth) {
+    btnGenDailyMonth.addEventListener('click', () => generateDailySubtasksTemplate('month'));
+  }
   document.getElementById('btn-gen-week-subtasks').addEventListener('click', generateWeekSubtasksTemplate);
   document.getElementById('btn-gen-month-subtasks').addEventListener('click', generateMonthSubtasksTemplate);
 
@@ -628,6 +680,23 @@ function togglePatInputVisibility(authType) {
   }
 }
 
+/**
+ * Đồng bộ trạng thái active của 2 nút chọn nhanh 1h (Daily) và 8h
+ */
+function syncTimePresetChipsUI(rawVal) {
+  const val = (rawVal || '').trim().toLowerCase();
+  const btn1h = document.getElementById('btn-preset-1h');
+  const btn8h = document.getElementById('btn-preset-8h');
+  if (btn1h) {
+    if (val === '1h' || val === '1') btn1h.classList.add('active');
+    else btn1h.classList.remove('active');
+  }
+  if (btn8h) {
+    if (val === '8h' || val === '8') btn8h.classList.add('active');
+    else btn8h.classList.remove('active');
+  }
+}
+
 // ============================================================================
 // XỬ LÝ LỊCH, TUẦN LÀM VIỆC & MAPPING 1-1
 // ============================================================================
@@ -756,19 +825,22 @@ async function handleFetchParentSubtasks() {
       key: st.key,
       summary: st.summary,
       status: st.status,
+      dueDate: st.dueDate || '',
       totalSeconds: wlRes.totalSeconds || 0,
       totalHours: wlRes.totalHours || 0,
       isAt8hCap: wlRes.isAt8hCap || false,
-      loggedDates: wlRes.loggedDates || new Set()
+      loggedDates: wlRes.loggedDates || new Set(),
+      worklogs: wlRes.worklogs || []
     });
   }
 
   AppState.loadedSubtasks = loadedList;
 
+  const loggedTaskCount = loadedList.filter((t) => t.totalSeconds > 0).length;
   const cappedCount = loadedList.filter((t) => t.isAt8hCap).length;
   badge.innerHTML = `
     <strong>[${res.issue.key}]</strong>: ${res.issue.summary}<br>
-    ✅ Đã tải <strong>${subtasks.length} Sub-task(s)</strong> (${cappedCount} task đã đủ 8h).
+    ✅ Đã tải <strong>${subtasks.length} Sub-task(s)</strong> (Đã log: ${loggedTaskCount} task, chạm trần 8h: ${cappedCount} task).
   `;
 
   buildTaskMappingAndSummary();
@@ -778,13 +850,15 @@ async function handleFetchParentSubtasks() {
  * Xây dựng bảng Mapping 1-1 giữa Ngày làm việc ↔ Task tương ứng
  * Thuật toán thông minh (Smart Sub-task Allocation):
  * - Bước 1: Quét các ngày đã từng có worklog trên Jira để gán đúng task và đánh dấu Đã log.
- * - Bước 2: Với các ngày chưa log, tự động tìm sub-task còn trống (< 8h và chưa gán) để gán vào.
+ * - Bước 2: Với các ngày chưa log, ưu tiên tìm sub-task chưa log có Due Date (hoặc tiêu đề) khớp với ngày đó,
+ *           sau đó mới đến các sub-task chưa từng logwork (totalSeconds === 0).
  * - Bước 3: Tuân thủ quy định công ty: Không gán sub-task đã đủ 8h cho ngày mới.
  */
 function buildTaskMappingAndSummary() {
   const skipLogged = document.getElementById('skip-logged-days').checked;
-  const timeSpentVal = document.getElementById('log-time-spent').value.trim() || '8h';
-  const hoursPerDay = Math.min(8, parseFloat(timeSpentVal.replace(/[^\d.]/g, '')) || 8); // Giới hạn tối đa 8h
+  const timeSpentVal = document.getElementById('log-time-spent').value.trim() || '1h';
+  const parsedHours = parseFloat(timeSpentVal.replace(/[^\d.]/g, ''));
+  const hoursPerDay = Math.min(8, (!isNaN(parsedHours) && parsedHours > 0) ? parsedHours : 1); // Mặc định 1h, tối đa 8h
 
   AppState.taskMapping = [];
   const tbody = document.getElementById('mapping-table-body');
@@ -814,16 +888,38 @@ function buildTaskMappingAndSummary() {
       }
     });
 
-    // BƯỚC 2: Với các ngày còn lại chưa có logwork, tìm sub-task còn trống (< 8h và chưa dùng)
+    // BƯỚC 2A: Với các ngày chưa có logwork, ưu tiên tìm sub-task trống có Due Date hoặc tiêu đề khớp ngày
     days.forEach((day, dayIndex) => {
       if (!dayAllocations[dayIndex]) {
-        const candidate = subtasks.find((st) => !usedSubtaskKeys.has(st.key) && !st.isAt8hCap && st.totalHours < 8);
-        if (candidate) {
+        const matchedByDate = subtasks.find((st) =>
+          !usedSubtaskKeys.has(st.key) &&
+          st.totalSeconds === 0 &&
+          (st.dueDate === day.dateString || (st.summary && st.summary.includes(day.displayDate)))
+        );
+        if (matchedByDate) {
           dayAllocations[dayIndex] = {
-            task: candidate,
+            task: matchedByDate,
             isAlreadyLoggedOnDate: false
           };
-          usedSubtaskKeys.add(candidate.key);
+          usedSubtaskKeys.add(matchedByDate.key);
+        }
+      }
+    });
+
+    // BƯỚC 2B: Với các ngày còn lại, tìm sub-task hoàn toàn chưa log (totalSeconds === 0)
+    days.forEach((day, dayIndex) => {
+      if (!dayAllocations[dayIndex]) {
+        const unloggedCandidate = subtasks.find((st) =>
+          !usedSubtaskKeys.has(st.key) &&
+          st.totalSeconds === 0 &&
+          !st.isAt8hCap
+        );
+        if (unloggedCandidate) {
+          dayAllocations[dayIndex] = {
+            task: unloggedCandidate,
+            isAlreadyLoggedOnDate: false
+          };
+          usedSubtaskKeys.add(unloggedCandidate.key);
         } else {
           dayAllocations[dayIndex] = {
             task: null,
@@ -845,9 +941,15 @@ function buildTaskMappingAndSummary() {
       let statusText = '';
       let badgeClass = '';
       let shouldSkip = false;
+      let worklogsToDelete = [];
+
+      if (task && Array.isArray(task.worklogs) && task.worklogs.length > 0) {
+        const onDate = task.worklogs.filter((w) => w.startedDate === day.dateString);
+        worklogsToDelete = onDate.length > 0 ? onDate : task.worklogs;
+      }
 
       if (isAlreadyLoggedOnDate) {
-        statusText = `Đã log ngày này (${existingHours}h)`;
+        statusText = `Đã log (${existingHours}h)`;
         badgeClass = 'badge-logged';
         if (skipLogged) shouldSkip = true;
         alreadyLoggedDaysCount++;
@@ -857,8 +959,8 @@ function buildTaskMappingAndSummary() {
         toLogDaysCount++;
       } else {
         assignedKey = '(Hết Sub-task trống)';
-        assignedSummary = 'Tất cả sub-task đã đủ 8h hoặc chưa tạo thêm sub-task';
-        statusText = 'Thiếu Sub-task < 8h';
+        assignedSummary = 'Tất cả sub-task đã được log hoặc chưa tạo thêm sub-task';
+        statusText = 'Thiếu Sub-task trống';
         badgeClass = 'badge-capped';
         shouldSkip = true;
       }
@@ -869,15 +971,20 @@ function buildTaskMappingAndSummary() {
         issueSummary: assignedSummary,
         status: statusText,
         hoursToLog: `${hoursPerDay}h`,
-        skip: shouldSkip
+        skip: shouldSkip,
+        worklogsToDelete
       });
+
+      const deleteBtnHtml = worklogsToDelete.length > 0
+        ? `<button type="button" class="btn-delete-inline" data-delete-row="${dayIndex}" title="Xóa logwork của ${assignedKey} ngày ${day.displayDate}">🗑️ Xóa</button>`
+        : '';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${day.displayDate}</strong> (${day.dayOfWeek})</td>
-        <td><code>${assignedKey}</code></td>
+        <td title="${assignedSummary.replace(/"/g, '&quot;')}"><code>${assignedKey}</code></td>
         <td>${existingHours > 0 ? existingHours + 'h' : '0h'}</td>
-        <td><span class="badge-status ${badgeClass}">${statusText}</span></td>
+        <td><span class="badge-status ${badgeClass}">${statusText}</span>${deleteBtnHtml}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -895,12 +1002,18 @@ function buildTaskMappingAndSummary() {
       let assignedSummary = '';
       let existingHours = 0;
       let isAlreadyLoggedOnDate = false;
+      let worklogsToDelete = [];
 
       if (AppState.targetMode === 'single') {
         assignedKey = document.getElementById('log-issue-key').value.trim().toUpperCase() || '(Chưa nhập)';
         assignedSummary = 'Task duy nhất';
-        if (AppState.currentIssue && AppState.alreadyLoggedDates) {
-          isAlreadyLoggedOnDate = AppState.alreadyLoggedDates.has(day.dateString);
+        if (AppState.singleIssueWorklogs && AppState.singleIssueWorklogs.loggedDates) {
+          isAlreadyLoggedOnDate = AppState.singleIssueWorklogs.loggedDates.has(day.dateString);
+          if (isAlreadyLoggedOnDate && Array.isArray(AppState.singleIssueWorklogs.worklogs)) {
+            worklogsToDelete = AppState.singleIssueWorklogs.worklogs.filter((w) => w.startedDate === day.dateString);
+            const secsOnDate = worklogsToDelete.reduce((sum, w) => sum + (w.timeSpentSeconds || 0), 0);
+            existingHours = Math.round((secsOnDate / 3600) * 10) / 10;
+          }
         }
       } else if (AppState.targetMode === 'multi-keys') {
         if (index < multiKeysList.length) {
@@ -921,7 +1034,7 @@ function buildTaskMappingAndSummary() {
         badgeClass = 'badge-skipped';
         shouldSkip = true;
       } else if (isAlreadyLoggedOnDate) {
-        statusText = `Đã log ngày này (${existingHours}h)`;
+        statusText = `Đã log (${existingHours}h)`;
         badgeClass = 'badge-logged';
         if (skipLogged) shouldSkip = true;
         alreadyLoggedDaysCount++;
@@ -937,19 +1050,32 @@ function buildTaskMappingAndSummary() {
         issueSummary: assignedSummary,
         status: statusText,
         hoursToLog: `${hoursPerDay}h`,
-        skip: shouldSkip
+        skip: shouldSkip,
+        worklogsToDelete
       });
+
+      const deleteBtnHtml = worklogsToDelete.length > 0
+        ? `<button type="button" class="btn-delete-inline" data-delete-row="${index}" title="Xóa logwork ngày ${day.displayDate}">🗑️ Xóa</button>`
+        : '';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${day.displayDate}</strong> (${day.dayOfWeek})</td>
         <td><code>${assignedKey}</code></td>
         <td>${existingHours > 0 ? existingHours + 'h' : '0h'}</td>
-        <td><span class="badge-status ${badgeClass}">${statusText}</span></td>
+        <td><span class="badge-status ${badgeClass}">${statusText}</span>${deleteBtnHtml}</td>
       `;
       tbody.appendChild(tr);
     });
   }
+
+  // Gắn sự kiện cho các nút xóa lẻ từng dòng trong bảng Chi tiết phân bổ
+  tbody.querySelectorAll('.btn-delete-inline').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const rowIdx = parseInt(e.currentTarget.getAttribute('data-delete-row'), 10);
+      handleDeleteRowWorklogs(rowIdx);
+    });
+  });
 
   // Cập nhật thống kê
   const totalDays = days.length;
@@ -965,25 +1091,37 @@ function buildTaskMappingAndSummary() {
 }
 
 /**
- * Kiểm tra issue đơn lẻ (Chế độ Single Task)
+ * Kiểm tra issue đơn lẻ (Chế độ Single Task) kèm danh sách worklog đã log
  */
 async function verifySingleIssue(issueKey) {
   const badge = document.getElementById('single-issue-info-badge');
   badge.classList.remove('hidden');
-  badge.innerHTML = '<em>Đang kiểm tra Issue trên Jira...</em>';
+  badge.innerHTML = '<em>Đang kiểm tra Issue và lịch sử Logwork trên Jira...</em>';
 
   const authConfig = {
     authType: AppState.settings.authType,
     personalAccessToken: AppState.settings.personalAccessToken
   };
 
-  const res = await JiraApi.getIssueWithSubtasks(AppState.settings.jiraBaseUrl, issueKey, authConfig);
+  const [res, wlRes] = await Promise.all([
+    JiraApi.getIssueWithSubtasks(AppState.settings.jiraBaseUrl, issueKey, authConfig),
+    JiraApi.getWorklogs(AppState.settings.jiraBaseUrl, issueKey, authConfig)
+  ]);
+
   if (!res.success) {
     badge.innerHTML = `<span style="color:var(--danger-color)">❌ ${res.error}</span>`;
+    AppState.singleIssueWorklogs = { loggedDates: new Set(), totalHours: 0, worklogs: [] };
+    buildTaskMappingAndSummary();
     return;
   }
 
-  badge.innerHTML = `<strong>[${res.issue.key}]</strong>: ${res.issue.summary} (${res.issue.status})`;
+  AppState.singleIssueWorklogs = {
+    loggedDates: wlRes.loggedDates || new Set(),
+    totalHours: wlRes.totalHours || 0,
+    worklogs: wlRes.worklogs || []
+  };
+
+  badge.innerHTML = `<strong>[${res.issue.key}]</strong>: ${res.issue.summary} (${res.issue.status}) — Đã log tổng: <strong>${wlRes.totalHours || 0}h</strong>`;
   buildTaskMappingAndSummary();
 }
 
@@ -1009,7 +1147,8 @@ async function handleStartLogwork() {
   }
 
   const modeText = AppState.timeMode === 'week' ? 'tuần này' : 'tháng này';
-  const confirmMsg = `Xác nhận bắt đầu logwork (${modeText}):\n- Số ngày sẽ log: ${itemsToLog.length} ngày\n- Số giờ mỗi task: 8h (Tuân thủ quy định tối đa 8h/task)\n- Phân bổ theo từng task tương ứng.\n\nBạn có muốn tiếp tục?`;
+  const sampleHours = itemsToLog[0]?.hoursToLog || '1h';
+  const confirmMsg = `Xác nhận bắt đầu logwork (${modeText}):\n- Số ngày sẽ log: ${itemsToLog.length} ngày\n- Số giờ mỗi ngày/task: ${sampleHours}\n- Phân bổ theo từng task tương ứng.\n\nBạn có muốn tiếp tục?`;
   if (!confirm(confirmMsg)) return;
 
   AppState.isRunningBatch = true;
@@ -1100,6 +1239,176 @@ async function handleStartLogwork() {
   // Làm mới lại dữ liệu subtasks nếu ở chế độ parent
   if (AppState.targetMode === 'parent-subtasks') {
     handleFetchParentSubtasks();
+  } else if (AppState.targetMode === 'single') {
+    const singleKey = document.getElementById('log-issue-key')?.value.trim();
+    if (singleKey) verifySingleIssue(singleKey);
+  } else {
+    buildTaskMappingAndSummary();
+  }
+}
+
+/**
+ * Xóa logwork của 1 dòng cụ thể trong bảng Chi tiết phân bổ
+ */
+async function handleDeleteRowWorklogs(rowIndex) {
+  if (AppState.isRunningBatch) return;
+  const item = AppState.taskMapping[rowIndex];
+  if (!item || !item.issueKey || !Array.isArray(item.worklogsToDelete) || item.worklogsToDelete.length === 0) {
+    alert('Không tìm thấy bản ghi logwork nào để xóa trên dòng này.');
+    return;
+  }
+
+  const jiraBaseUrl = AppState.settings.jiraBaseUrl;
+  const confirmMsg = `Xác nhận XÓA ${item.worklogsToDelete.length} bản ghi logwork trên task [${item.issueKey}] (Ngày ${item.day.displayDate})?`;
+  if (!confirm(confirmMsg)) return;
+
+  const authConfig = {
+    authType: AppState.settings.authType,
+    personalAccessToken: AppState.settings.personalAccessToken
+  };
+
+  let deletedCount = 0;
+  let errorMsg = '';
+
+  for (const wl of item.worklogsToDelete) {
+    const res = await JiraApi.deleteWorklog(jiraBaseUrl, item.issueKey, wl.id, authConfig);
+    if (res.success) {
+      deletedCount++;
+    } else {
+      errorMsg = res.error || 'Lỗi xóa worklog';
+    }
+  }
+
+  if (deletedCount > 0) {
+    if (AppState.targetMode === 'parent-subtasks') {
+      await handleFetchParentSubtasks();
+    } else if (AppState.targetMode === 'single') {
+      const singleKey = document.getElementById('log-issue-key')?.value.trim();
+      if (singleKey) await verifySingleIssue(singleKey);
+    } else {
+      buildTaskMappingAndSummary();
+    }
+  } else {
+    alert(`❌ Không thể xóa logwork: ${errorMsg}`);
+  }
+}
+
+/**
+ * Xóa hàng loạt các bản ghi logwork đã ghi trong phạm vi Tuần / Tháng đang chọn
+ */
+async function handleBatchDeleteWorklogs() {
+  if (AppState.isRunningBatch) return;
+
+  const jiraBaseUrl = AppState.settings.jiraBaseUrl;
+  if (!jiraBaseUrl) {
+    alert('Vui lòng vào tab Cài đặt để nhập địa chỉ Jira Base URL trước!');
+    return;
+  }
+
+  // Thu thập danh sách các worklog cần xóa từ bảng mapping hiện tại
+  const deleteTargets = [];
+  const seenWorklogIds = new Set();
+
+  for (const item of AppState.taskMapping) {
+    if (item.issueKey && !item.issueKey.startsWith('(') && Array.isArray(item.worklogsToDelete)) {
+      for (const wl of item.worklogsToDelete) {
+        const uniqueKey = `${item.issueKey}:${wl.id}`;
+        if (!seenWorklogIds.has(uniqueKey)) {
+          seenWorklogIds.add(uniqueKey);
+          deleteTargets.push({
+            issueKey: item.issueKey,
+            worklogId: wl.id,
+            displayDate: item.day.displayDate,
+            timeSpent: wl.timeSpent || ''
+          });
+        }
+      }
+    }
+  }
+
+  if (deleteTargets.length === 0) {
+    alert('Không có bản ghi logwork nào trong phạm vi đang chọn để xóa!');
+    return;
+  }
+
+  const modeText = AppState.timeMode === 'week' ? 'tuần này' : 'tháng này';
+  const confirmMsg = `⚠️ Xác nhận XÓA LOGWORK (${modeText}):\n- Tổng số bản ghi logwork sẽ xóa: ${deleteTargets.length}\n- Các task liên quan: ${[...new Set(deleteTargets.map((t) => t.issueKey))].join(', ')}\n\nBạn có chắc chắn muốn xóa để log lại không?`;
+  if (!confirm(confirmMsg)) return;
+
+  AppState.isRunningBatch = true;
+  const deleteBtn = document.getElementById('btn-batch-delete-logwork');
+  const startBtn = document.getElementById('btn-start-logwork');
+  if (deleteBtn) {
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = '⏳ Đang xóa...';
+  }
+  if (startBtn) startBtn.disabled = true;
+
+  const progressContainer = document.getElementById('progress-container');
+  const progressBarFill = document.getElementById('progress-bar-fill');
+  const progressText = document.getElementById('progress-text');
+  const progressPercent = document.getElementById('progress-percent');
+  const logConsole = document.getElementById('log-console');
+
+  progressContainer.classList.remove('hidden');
+  logConsole.innerHTML = '';
+  progressBarFill.style.width = '0%';
+
+  const appendConsole = (msg, isError = false) => {
+    const time = new Date().toLocaleTimeString('vi-VN');
+    const line = document.createElement('div');
+    if (isError) line.style.color = '#ff8f73';
+    line.textContent = `[${time}] ${msg}`;
+    logConsole.appendChild(line);
+    logConsole.scrollTop = logConsole.scrollHeight;
+  };
+
+  appendConsole(`Bắt đầu xóa ${deleteTargets.length} bản ghi logwork...`);
+
+  const authConfig = {
+    authType: AppState.settings.authType,
+    personalAccessToken: AppState.settings.personalAccessToken
+  };
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < deleteTargets.length; i++) {
+    const target = deleteTargets[i];
+    const currentIndex = i + 1;
+    const percent = Math.round((currentIndex / deleteTargets.length) * 100);
+
+    progressText.textContent = `Đang xóa log: ${target.issueKey} (${currentIndex}/${deleteTargets.length})...`;
+    progressPercent.textContent = `${percent}%`;
+    progressBarFill.style.width = `${percent}%`;
+
+    const res = await JiraApi.deleteWorklog(jiraBaseUrl, target.issueKey, target.worklogId, authConfig);
+    if (res.success) {
+      successCount++;
+      appendConsole(`🗑️ [${target.displayDate}] Đã xóa logwork trên ${target.issueKey} (${target.timeSpent})`);
+    } else {
+      failCount++;
+      appendConsole(`❌ [${target.displayDate}] Xóa thất bại trên ${target.issueKey}: ${res.error}`, true);
+    }
+
+    await new Promise((r) => setTimeout(r, 120));
+  }
+
+  AppState.isRunningBatch = false;
+  if (deleteBtn) {
+    deleteBtn.disabled = false;
+    deleteBtn.textContent = '🗑️ Xóa Logwork';
+  }
+  if (startBtn) startBtn.disabled = false;
+
+  progressText.textContent = `Hoàn tất xóa! Đã xóa: ${successCount}, Lỗi: ${failCount}`;
+  appendConsole(`🏁 Tổng kết: Đã xóa ${successCount}/${deleteTargets.length} bản ghi logwork.`);
+
+  if (AppState.targetMode === 'parent-subtasks') {
+    handleFetchParentSubtasks();
+  } else if (AppState.targetMode === 'single') {
+    const singleKey = document.getElementById('log-issue-key')?.value.trim();
+    if (singleKey) verifySingleIssue(singleKey);
   } else {
     buildTaskMappingAndSummary();
   }
@@ -1108,6 +1417,35 @@ async function handleStartLogwork() {
 // ============================================================================
 // TAB 2: TẠO HÀNG LOẠT SUB-TASK THEO TUẦN / THÁNG
 // ============================================================================
+
+/**
+ * Sinh danh sách Sub-task Daily theo Tuần hoặc cả Tháng dựa trên nội dung mẫu người dùng nhập.
+ * @param {'week'|'month'} scope
+ */
+function generateDailySubtasksTemplate(scope = 'week') {
+  const month = parseInt(document.getElementById('log-month').value, 10);
+  const year = parseInt(document.getElementById('log-year').value, 10);
+  const excludedSet = DateUtils.parseExcludedDates(AppState.settings.excludedHolidays);
+
+  const days = scope === 'month'
+    ? DateUtils.getWorkingDaysOfMonth(year, month, excludedSet)
+    : (AppState.activeWorkingDays && AppState.activeWorkingDays.length > 0
+      ? AppState.activeWorkingDays
+      : DateUtils.getWorkingDaysOfMonth(year, month, excludedSet).slice(0, 5));
+
+  const rawTitle = document.getElementById('daily-subtask-template-input')?.value.trim() || 'Họp giao ban, báo cáo tiến độ và tổng kết ngày';
+  const includePrefix = document.getElementById('include-date-prefix-subtask')?.checked;
+
+  const textarea = document.getElementById('create-subtask-list');
+  const lines = days.map((day) => {
+    if (includePrefix) {
+      return `[${day.dayOfWeek} ${day.displayDate}] ${rawTitle}`;
+    }
+    return rawTitle;
+  });
+
+  textarea.value = lines.join('\n');
+}
 
 /**
  * Sinh mẫu 5 Sub-task tương ứng với 5 ngày trong tuần đang chọn.
@@ -1428,8 +1766,16 @@ async function handleBatchCreateSubtasks() {
     }
   }
 
-  // Lấy danh sách ngày công đang active (để gán due date tự động theo ngày)
-  const workingDays = AppState.activeWorkingDays || [];
+  // Lấy danh sách ngày công để gán due date tự động theo từng ngày:
+  // Nếu số lượng sub-task tạo ra nhiều hơn số ngày trong tuần hiện tại (ví dụ tạo cả tháng),
+  // tự động lấy danh sách toàn bộ ngày làm việc trong tháng để gán đủ Due Date cho từng ngày.
+  const month = parseInt(document.getElementById('log-month').value, 10);
+  const year = parseInt(document.getElementById('log-year').value, 10);
+  const excludedSet = DateUtils.parseExcludedDates(AppState.settings.excludedHolidays);
+  const activeDays = AppState.activeWorkingDays || [];
+  const workingDays = textLines.length > activeDays.length
+    ? DateUtils.getWorkingDaysOfMonth(year, month, excludedSet)
+    : activeDays;
 
   for (let i = 0; i < textLines.length; i++) {
     const summary = textLines[i];
@@ -1449,11 +1795,12 @@ async function handleBatchCreateSubtasks() {
       taskDueDate = customDueDate;
     }
 
+    // Lấy chính Title (summary) làm Description theo đúng yêu cầu
     const res = await JiraApi.createSubtask(jiraBaseUrl, {
       parentKey,
       projectKey,
       summary,
-      description: `Sub-task tự động tạo cho ngày làm việc (mỗi task log tối đa 8h)`,
+      description: summary,
       dueDate: taskDueDate,
       assignee: assigneeName,
       customFields: customFieldsPayload,

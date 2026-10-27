@@ -427,6 +427,48 @@ label {
   background-color: #c0dcff;
 }
 
+.btn-chip-xs {
+  padding: 1px 7px;
+  font-size: 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.btn-chip-xs.active {
+  background-color: var(--primary-color);
+  color: #ffffff;
+}
+
+.btn-chip-subtle {
+  background-color: #ebecf0;
+  color: var(--text-main);
+}
+
+.btn-chip-subtle:hover {
+  background-color: #dfe1e6;
+}
+
+.time-preset-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.daily-template-card {
+  background-color: #f4f5f7;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+  margin-bottom: 8px;
+}
+
+.daily-template-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
 /* Checkbox */
 .form-check-group {
   margin: 8px 0 10px;
@@ -647,6 +689,42 @@ label {
   border-top: 1px solid var(--border-color);
   box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.05);
   z-index: 50;
+}
+
+.action-footer-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.btn-danger-outline {
+  background-color: #ffebe6;
+  color: #bf2600;
+  border: 1px solid #ffbdad;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.btn-danger-outline:hover:not(:disabled) {
+  background-color: #ffbdad;
+  color: #931600;
+}
+
+.btn-delete-inline {
+  background-color: #ffebe6;
+  color: #bf2600;
+  border: 1px solid #ffbdad;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 4px;
+  transition: background-color 0.2s;
+}
+
+.btn-delete-inline:hover:not(:disabled) {
+  background-color: #ffbdad;
 }
 
 .action-footer-buttons {

@@ -169,6 +169,7 @@ const JiraApi = {
           key: st.key,
           summary: st.fields?.summary || '',
           status: st.fields?.status?.name || '',
+          dueDate: st.fields?.duedate || '',
           issueType: it?.name || '',
           issueTypeId: it?.id ? String(it.id) : ''
         };
@@ -230,19 +231,28 @@ const JiraApi = {
       }
 
       const data = await response.json();
-      const worklogs = data.worklogs || [];
+      const rawWorklogs = data.worklogs || [];
       const loggedDates = new Set();
       let totalSeconds = 0;
 
-      for (const log of worklogs) {
-        if (log.started) {
-          const dateOnly = log.started.slice(0, 10);
-          loggedDates.add(dateOnly);
+      const worklogs = rawWorklogs.map((log) => {
+        const startedDate = log.started ? log.started.slice(0, 10) : '';
+        if (startedDate) {
+          loggedDates.add(startedDate);
         }
-        if (typeof log.timeSpentSeconds === 'number') {
-          totalSeconds += log.timeSpentSeconds;
-        }
-      }
+        const secs = typeof log.timeSpentSeconds === 'number' ? log.timeSpentSeconds : 0;
+        totalSeconds += secs;
+        return {
+          id: String(log.id),
+          started: log.started || '',
+          startedDate,
+          timeSpent: log.timeSpent || '',
+          timeSpentSeconds: secs,
+          comment: log.comment || '',
+          authorName: log.author?.name || '',
+          authorDisplayName: log.author?.displayName || ''
+        };
+      });
 
       const totalHours = Math.round((totalSeconds / 3600) * 10) / 10;
       // 8 giờ tương đương 28,800 giây
@@ -305,6 +315,44 @@ const JiraApi = {
 
       const data = await response.json();
       return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Xóa một bản ghi worklog trên issue theo worklogId.
+   * Endpoint: DELETE /rest/api/2/issue/{issueKey}/worklog/{worklogId}
+   * @param {string} baseUrl
+   * @param {string} issueKey
+   * @param {string|number} worklogId
+   * @param {Object} authConfig
+   * @returns {Promise<{success: boolean, error?: string}>}
+   */
+  async deleteWorklog(baseUrl, issueKey, worklogId, authConfig = {}) {
+    const cleanUrl = this.normalizeBaseUrl(baseUrl);
+    const key = (issueKey || '').trim().toUpperCase();
+    const wlId = String(worklogId || '').trim();
+
+    if (!cleanUrl || !key || !wlId) {
+      return { success: false, error: 'Thiếu thông tin Issue Key hoặc Worklog ID để xóa' };
+    }
+
+    const endpoint = `${cleanUrl}/rest/api/2/issue/${key}/worklog/${wlId}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: this.buildHeaders(authConfig),
+        credentials: 'include'
+      });
+
+      if (!response.ok && response.status !== 204) {
+        const errorMsg = await this.parseErrorMessage(response);
+        return { success: false, error: errorMsg };
+      }
+
+      return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -488,7 +536,8 @@ const JiraApi = {
         project: { key: projectKey },
         parent: { key: parentKey },
         summary: (params.summary || '').trim(),
-        description: params.description || 'Sub-task thực hiện công việc'
+        // Lấy chính Title (summary) làm Description nếu không truyền description riêng
+        description: (params.description || params.summary || '').trim()
       };
 
       if (targetType && targetType.id) {

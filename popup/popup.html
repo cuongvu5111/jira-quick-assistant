@@ -161,8 +161,14 @@
       <!-- Cấu hình số giờ và nội dung -->
       <div class="form-row form-row-2col">
         <div class="form-group">
-          <label for="log-time-spent">Số giờ/ngày: <span class="badge-rule">Tối đa 8h/task</span></label>
-          <input type="text" id="log-time-spent" class="form-control" value="8h" placeholder="8h">
+          <div class="label-with-action">
+            <label for="log-time-spent">Số giờ/ngày:</label>
+            <div class="time-preset-chips">
+              <button type="button" class="btn-chip btn-chip-xs active" id="btn-preset-1h" data-hours="1h" title="Mặc định 1h cho task Daily">☕ Daily 1h</button>
+              <button type="button" class="btn-chip btn-chip-xs" id="btn-preset-8h" data-hours="8h" title="Mặc định 8h cho công việc ngày">💼 8h</button>
+            </div>
+          </div>
+          <input type="text" id="log-time-spent" class="form-control" value="1h" placeholder="1h">
         </div>
         <div class="form-group">
           <label for="log-start-time">Giờ bắt đầu:</label>
@@ -243,9 +249,12 @@
       </div>
 
       <!-- Nút hành động chính -->
-      <div class="action-footer">
-        <button id="btn-start-logwork" type="button" class="btn btn-primary btn-block">
+      <div class="action-footer action-footer-row">
+        <button id="btn-start-logwork" type="button" class="btn btn-primary" style="flex: 1;">
           ⚡ Bắt đầu Phân Bổ & Logwork
+        </button>
+        <button id="btn-batch-delete-logwork" type="button" class="btn btn-danger-outline" title="Xóa các logwork đã ghi trong Tuần/Tháng đang chọn">
+          🗑️ Xóa Logwork
         </button>
       </div>
     </section>
@@ -317,16 +326,30 @@
           <div id="ai-gen-status" class="ai-status-msg hidden"></div>
         </div>
 
-        <div class="quick-template-bar">
-          <span class="quick-title">⚡ Hoặc chọn mẫu tự động:</span>
-          <button type="button" id="btn-gen-week-subtasks" class="btn-chip">Sinh 5 Sub-task theo tuần</button>
-          <button type="button" id="btn-gen-month-subtasks" class="btn-chip">Sinh Sub-task cả tháng</button>
+        <!-- Khối sinh nhanh Sub-task Daily theo Tuần / Tháng -->
+        <div class="daily-template-card">
+          <div class="daily-template-header">
+            <span class="quick-title">☕ Sinh nhanh Sub-task Daily (Theo Tuần / Tháng):</span>
+            <label class="checkbox-container" style="font-size: 10px; gap: 4px;">
+              <input type="checkbox" id="include-date-prefix-subtask">
+              <span>Kèm thứ/ngày ở đầu</span>
+            </label>
+          </div>
+          <div class="form-group" style="margin-bottom: 6px;">
+            <input type="text" id="daily-subtask-template-input" class="form-control form-control-sm" value="Họp giao ban, báo cáo tiến độ và tổng kết ngày" placeholder="Nhập nội dung sub-task daily mỗi ngày...">
+          </div>
+          <div class="quick-template-bar" style="margin-bottom: 0;">
+            <button type="button" id="btn-gen-daily-week" class="btn-chip">☕ Sinh Daily theo Tuần</button>
+            <button type="button" id="btn-gen-daily-month" class="btn-chip">🗓️ Sinh Daily cả Tháng</button>
+            <button type="button" id="btn-gen-week-subtasks" class="btn-chip btn-chip-subtle">⚡ Mẫu 5 việc Tuần</button>
+            <button type="button" id="btn-gen-month-subtasks" class="btn-chip btn-chip-subtle">📋 Mẫu việc Tháng</button>
+          </div>
         </div>
 
         <div class="form-group">
           <label for="create-subtask-list">Danh sách tiêu đề Sub-task (mỗi dòng 1 task): <span class="required">*</span></label>
-          <textarea id="create-subtask-list" class="form-control" rows="5" placeholder="[T2] Thực hiện công việc ngày 1&#10;[T3] Thực hiện công việc ngày 2&#10;..."></textarea>
-          <span class="form-hint">Mỗi dòng sẽ tạo ra 1 sub-task tương ứng với 1 ngày làm việc (tối đa 8h/task).</span>
+          <textarea id="create-subtask-list" class="form-control" rows="5" placeholder="Họp giao ban, báo cáo tiến độ và tổng kết ngày&#10;Họp giao ban, báo cáo tiến độ và tổng kết ngày&#10;..."></textarea>
+          <span class="form-hint">Mỗi dòng tạo 1 sub-task theo ngày làm việc (Tự động lấy Tiêu đề làm Description).</span>
         </div>
 
         <!-- Cấu hình các trường đặc thù VNPT cho Sub-tasks -->
