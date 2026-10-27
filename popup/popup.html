@@ -35,7 +35,10 @@
       <span class="tab-icon">⏱️</span> Logwork
     </button>
     <button class="tab-btn" data-tab="tab-create-task">
-      <span class="tab-icon">📝</span> Tạo Task / Sub-task
+      <span class="tab-icon">📝</span> Tạo Task
+    </button>
+    <button class="tab-btn" data-tab="tab-delete-logwork">
+      <span class="tab-icon">🗑️</span> Xóa Logwork
     </button>
     <button class="tab-btn" data-tab="tab-settings">
       <span class="tab-icon">⚙️</span> Cài đặt
@@ -249,12 +252,9 @@
       </div>
 
       <!-- Nút hành động chính -->
-      <div class="action-footer action-footer-row">
-        <button id="btn-start-logwork" type="button" class="btn btn-primary" style="flex: 1;">
+      <div class="action-footer">
+        <button id="btn-start-logwork" type="button" class="btn btn-primary btn-block">
           ⚡ Bắt đầu Phân Bổ & Logwork
-        </button>
-        <button id="btn-batch-delete-logwork" type="button" class="btn btn-danger-outline" title="Xóa các logwork đã ghi trong Tuần/Tháng đang chọn">
-          🗑️ Xóa Logwork
         </button>
       </div>
     </section>
@@ -478,7 +478,105 @@
       </div>
     </section>
 
-    <!-- ==================== TAB 3: CÀI ĐẶT ==================== -->
+    <!-- ==================== TAB 3: XÓA LOGWORK ==================== -->
+    <section id="tab-delete-logwork" class="tab-pane">
+      <div class="form-group">
+        <div class="quick-select-card">
+          <div class="quick-select-header">
+            <span class="quick-select-title">⚡ Chọn nhanh Task từ danh sách của bạn:</span>
+            <button id="btn-refresh-delete-issues" type="button" class="btn-icon" title="Tải lại danh sách Task của bạn">🔄</button>
+          </div>
+          <select id="quick-delete-issue-select" class="form-control form-control-sm">
+            <option value="">-- Chọn nhanh Task Cha hoặc Task đơn của bạn --</option>
+          </select>
+        </div>
+
+        <div class="label-with-action" style="margin-top: 6px;">
+          <label for="delete-target-key">Mã Task Cha hoặc Issue Key (hoặc dán Link Jira): <span class="required">*</span></label>
+          <button id="btn-load-delete-worklogs" type="button" class="btn-text">🔍 Tải danh sách Logwork</button>
+        </div>
+        <input type="text" id="delete-target-key" class="form-control" placeholder="Ví dụ: CSDLKHCN-783 hoặc dán cả link Jira">
+        <div id="delete-target-badge" class="info-badge hidden"></div>
+      </div>
+
+      <div class="form-check-group" style="margin-top: 4px; margin-bottom: 8px;">
+        <label class="checkbox-container">
+          <input type="checkbox" id="delete-scan-subtasks" checked>
+          <span class="checkmark"></span>
+          <span>Tự động quét toàn bộ Sub-tasks con nếu là Task Cha</span>
+        </label>
+        <label class="checkbox-container" style="margin-top: 4px;">
+          <input type="checkbox" id="delete-only-mine" checked>
+          <span class="checkmark"></span>
+          <span>Chỉ hiển thị các bản ghi logwork của tôi</span>
+        </label>
+      </div>
+
+      <!-- Thống kê danh sách Logwork tìm thấy -->
+      <div class="summary-card">
+        <div class="summary-header">
+          <span class="summary-title">📋 Danh sách các lần đã Logwork:</span>
+          <span id="delete-selected-counter" style="font-size: 11px; color: var(--danger-color); font-weight: 600;">Đã chọn: 0</span>
+        </div>
+        <div class="summary-stats" style="margin-bottom: 8px;">
+          <div class="stat-item">
+            <span class="stat-val" id="del-stat-total-logs">0</span>
+            <span class="stat-lbl">Bản ghi log</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-val stat-warning" id="del-stat-total-tasks">0</span>
+            <span class="stat-lbl">Task có log</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-val stat-primary" id="del-stat-total-hours">0h</span>
+            <span class="stat-lbl">Tổng giờ đã log</span>
+          </div>
+        </div>
+
+        <div class="delete-worklogs-table-wrapper">
+          <table class="mapping-table delete-worklogs-table">
+            <thead>
+              <tr>
+                <th style="width: 26px; text-align: center;">
+                  <input type="checkbox" id="check-all-delete-worklogs" title="Chọn / Bỏ chọn tất cả">
+                </th>
+                <th style="width: 82px;">Ngày log</th>
+                <th>Task & Nội dung</th>
+                <th style="width: 46px;">Giờ</th>
+                <th style="width: 48px; text-align: center;">Xóa</th>
+              </tr>
+            </thead>
+            <tbody id="delete-worklogs-tbody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-sub); padding: 14px 6px;">
+                  Nhập hoặc chọn mã Task và bấm <strong>🔍 Tải danh sách Logwork</strong> để xem lịch sử đã log.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tiến trình xóa Logwork -->
+      <div id="delete-progress-container" class="progress-container hidden">
+        <div class="progress-bar-wrapper">
+          <div id="delete-progress-fill" class="progress-bar-fill" style="width: 0%; background-color: var(--danger-color);"></div>
+        </div>
+        <div class="progress-status-row">
+          <span id="delete-progress-text" class="progress-text">Đang xóa...</span>
+          <span id="delete-progress-percent" class="progress-percent">0%</span>
+        </div>
+        <div id="delete-log-console" class="log-console"></div>
+      </div>
+
+      <div class="action-footer">
+        <button id="btn-execute-delete-worklogs" type="button" class="btn btn-danger btn-block" disabled>
+          🗑️ Xóa các Logwork đã chọn (0)
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 4: CÀI ĐẶT ==================== -->
     <section id="tab-settings" class="tab-pane">
       <div class="form-group">
         <label for="jira-base-url">Jira Base URL: <span class="required">*</span></label>

@@ -34,6 +34,7 @@ const AppState = {
   activeWorkingDays: [],
   loadedSubtasks: [], // Array<{ key, summary, status, dueDate, totalSeconds, totalHours, isAt8hCap, loggedDates, worklogs }>
   singleIssueWorklogs: { loggedDates: new Set(), totalHours: 0, worklogs: [] },
+  loadedDeleteWorklogs: [], // Array<{ id, issueKey, issueSummary, started, startedDate, displayDate, displayTime, timeSpent, timeSpentSeconds, hours, comment, authorName, authorDisplayName, selected }>
   taskMapping: [], // Array<{ day, issueKey, issueSummary, status, hoursToLog, skip, worklogsToDelete }>
   isRunningBatch: false,
   cachedProjects: [],
@@ -264,6 +265,8 @@ function applySettingsToUI() {
     if (parentInput) parentInput.value = lastParentKey;
     const createParentInput = document.getElementById('create-parent-key');
     if (createParentInput) createParentInput.value = lastParentKey;
+    const deleteTargetInput = document.getElementById('delete-target-key');
+    if (deleteTargetInput) deleteTargetInput.value = lastParentKey;
   }
 
   // Task tab
@@ -443,11 +446,81 @@ function initEventHandlers() {
     }
   });
 
-  // Nút bắt đầu Logwork & Nút Xóa Logwork hàng loạt
+  // Nút bắt đầu Logwork
   document.getElementById('btn-start-logwork').addEventListener('click', handleStartLogwork);
-  const btnBatchDelete = document.getElementById('btn-batch-delete-logwork');
-  if (btnBatchDelete) {
-    btnBatchDelete.addEventListener('click', handleBatchDeleteWorklogs);
+
+  // ==========================================================================
+  // Tab 3: XÓA LOGWORK (Lịch sử Logwork trước đó)
+  // ==========================================================================
+  const deleteTargetInput = document.getElementById('delete-target-key');
+  if (deleteTargetInput) {
+    deleteTargetInput.addEventListener('input', (e) => {
+      const cleanKey = DateUtils.extractIssueKey(e.target.value);
+      if (cleanKey !== e.target.value) e.target.value = cleanKey;
+    });
+    deleteTargetInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLoadDeleteWorklogs();
+      }
+    });
+  }
+
+  const btnLoadDeleteWorklogs = document.getElementById('btn-load-delete-worklogs');
+  if (btnLoadDeleteWorklogs) {
+    btnLoadDeleteWorklogs.addEventListener('click', handleLoadDeleteWorklogs);
+  }
+
+  const quickDeleteSelect = document.getElementById('quick-delete-issue-select');
+  if (quickDeleteSelect) {
+    quickDeleteSelect.addEventListener('change', (e) => {
+      const selectedKey = e.target.value;
+      if (selectedKey && deleteTargetInput) {
+        deleteTargetInput.value = selectedKey;
+        handleLoadDeleteWorklogs();
+      }
+    });
+  }
+
+  const btnRefreshDeleteIssues = document.getElementById('btn-refresh-delete-issues');
+  if (btnRefreshDeleteIssues) {
+    btnRefreshDeleteIssues.addEventListener('click', () => {
+      const currentFilter = document.getElementById('quick-filter-select')?.value || 'unresolved';
+      loadAndRenderMyIssues(currentFilter, true);
+    });
+  }
+
+  const deleteScanSubtasksCheck = document.getElementById('delete-scan-subtasks');
+  if (deleteScanSubtasksCheck) {
+    deleteScanSubtasksCheck.addEventListener('change', () => {
+      if (deleteTargetInput?.value.trim()) {
+        handleLoadDeleteWorklogs();
+      }
+    });
+  }
+
+  const deleteOnlyMineCheck = document.getElementById('delete-only-mine');
+  if (deleteOnlyMineCheck) {
+    deleteOnlyMineCheck.addEventListener('change', () => {
+      renderDeleteWorklogsTable();
+    });
+  }
+
+  const checkAllDelete = document.getElementById('check-all-delete-worklogs');
+  if (checkAllDelete) {
+    checkAllDelete.addEventListener('change', (e) => {
+      const isChecked = e.target.checked;
+      const visibleItems = getFilteredDeleteWorklogs();
+      visibleItems.forEach((item) => {
+        item.selected = isChecked;
+      });
+      renderDeleteWorklogsTable();
+    });
+  }
+
+  const btnExecuteDelete = document.getElementById('btn-execute-delete-worklogs');
+  if (btnExecuteDelete) {
+    btnExecuteDelete.addEventListener('click', handleExecuteDeleteSelectedWorklogs);
   }
 
   // Tab 2: Tự động bóc tách URL ở ô Create Parent Key
@@ -975,16 +1048,12 @@ function buildTaskMappingAndSummary() {
         worklogsToDelete
       });
 
-      const deleteBtnHtml = worklogsToDelete.length > 0
-        ? `<button type="button" class="btn-delete-inline" data-delete-row="${dayIndex}" title="Xóa logwork của ${assignedKey} ngày ${day.displayDate}">🗑️ Xóa</button>`
-        : '';
-
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${day.displayDate}</strong> (${day.dayOfWeek})</td>
         <td title="${assignedSummary.replace(/"/g, '&quot;')}"><code>${assignedKey}</code></td>
         <td>${existingHours > 0 ? existingHours + 'h' : '0h'}</td>
-        <td><span class="badge-status ${badgeClass}">${statusText}</span>${deleteBtnHtml}</td>
+        <td><span class="badge-status ${badgeClass}">${statusText}</span></td>
       `;
       tbody.appendChild(tr);
     });
@@ -1054,28 +1123,16 @@ function buildTaskMappingAndSummary() {
         worklogsToDelete
       });
 
-      const deleteBtnHtml = worklogsToDelete.length > 0
-        ? `<button type="button" class="btn-delete-inline" data-delete-row="${index}" title="Xóa logwork ngày ${day.displayDate}">🗑️ Xóa</button>`
-        : '';
-
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${day.displayDate}</strong> (${day.dayOfWeek})</td>
         <td><code>${assignedKey}</code></td>
         <td>${existingHours > 0 ? existingHours + 'h' : '0h'}</td>
-        <td><span class="badge-status ${badgeClass}">${statusText}</span>${deleteBtnHtml}</td>
+        <td><span class="badge-status ${badgeClass}">${statusText}</span></td>
       `;
       tbody.appendChild(tr);
     });
   }
-
-  // Gắn sự kiện cho các nút xóa lẻ từng dòng trong bảng Chi tiết phân bổ
-  tbody.querySelectorAll('.btn-delete-inline').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      const rowIdx = parseInt(e.currentTarget.getAttribute('data-delete-row'), 10);
-      handleDeleteRowWorklogs(rowIdx);
-    });
-  });
 
   // Cập nhật thống kê
   const totalDays = days.length;
@@ -1214,7 +1271,7 @@ async function handleStartLogwork() {
       if (shouldResolve) {
         const resolveRes = await JiraApi.resolveIssue(jiraBaseUrl, item.issueKey, authConfig);
         if (resolveRes.success) {
-          appendConsole(`✨ [${item.issueKey}] Đã chuyển trạng thái: ${resolveRes.transitionName} (${resolveRes.toStatus})`);
+          appendConsole(`✨ [${item.issueKey}] Đã chuyển trạng thái: ${resolveRes.transitionName} (${resolveRes.toStatus} | Resolution: ${resolveRes.resolution || 'Done'})`);
         } else if (resolveRes.skipped) {
           appendConsole(`ℹ️ [${item.issueKey}] ${resolveRes.reason}`);
         } else if (resolveRes.error) {
@@ -1247,19 +1304,251 @@ async function handleStartLogwork() {
   }
 }
 
+// ============================================================================
+// TAB 3: TẢI DANH SÁCH & XÓA LOGWORK TRƯỚC ĐÓ
+// ============================================================================
+
 /**
- * Xóa logwork của 1 dòng cụ thể trong bảng Chi tiết phân bổ
+ * Tải toàn bộ danh sách logwork trước đó của Task (và toàn bộ Sub-tasks con nếu là Task Cha)
  */
-async function handleDeleteRowWorklogs(rowIndex) {
-  if (AppState.isRunningBatch) return;
-  const item = AppState.taskMapping[rowIndex];
-  if (!item || !item.issueKey || !Array.isArray(item.worklogsToDelete) || item.worklogsToDelete.length === 0) {
-    alert('Không tìm thấy bản ghi logwork nào để xóa trên dòng này.');
+async function handleLoadDeleteWorklogs() {
+  const jiraBaseUrl = AppState.settings.jiraBaseUrl;
+  const rawKey = document.getElementById('delete-target-key')?.value || '';
+  const targetKey = DateUtils.extractIssueKey(rawKey);
+  const inputEl = document.getElementById('delete-target-key');
+  if (inputEl) inputEl.value = targetKey;
+
+  const badge = document.getElementById('delete-target-badge');
+  const tbody = document.getElementById('delete-worklogs-tbody');
+
+  if (!jiraBaseUrl) {
+    if (badge) {
+      badge.classList.remove('hidden');
+      badge.innerHTML = '<span style="color:var(--danger-color)">⚠️ Chưa cấu hình Jira Base URL. Vui lòng vào Tab Cài đặt.</span>';
+    }
     return;
   }
 
-  const jiraBaseUrl = AppState.settings.jiraBaseUrl;
-  const confirmMsg = `Xác nhận XÓA ${item.worklogsToDelete.length} bản ghi logwork trên task [${item.issueKey}] (Ngày ${item.day.displayDate})?`;
+  if (!targetKey) {
+    alert('Vui lòng nhập hoặc chọn Mã Task cần kiểm tra logwork!');
+    inputEl?.focus();
+    return;
+  }
+
+  const scanSubtasks = document.getElementById('delete-scan-subtasks')?.checked;
+
+  if (badge) {
+    badge.classList.remove('hidden');
+    badge.innerHTML = '<em>⏳ Đang tải thông tin Task và quét danh sách Logwork từ Jira...</em>';
+  }
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:12px;">⏳ Đang tải lịch sử logwork...</td></tr>';
+  }
+
+  const authConfig = {
+    authType: AppState.settings.authType,
+    personalAccessToken: AppState.settings.personalAccessToken
+  };
+
+  const issueRes = await JiraApi.getIssueWithSubtasks(jiraBaseUrl, targetKey, authConfig);
+  if (!issueRes.success) {
+    if (badge) {
+      badge.innerHTML = `<span style="color:var(--danger-color)">❌ ${issueRes.error}</span>`;
+    }
+    AppState.loadedDeleteWorklogs = [];
+    renderDeleteWorklogsTable();
+    return;
+  }
+
+  // Danh sách các issue cần quét worklog: chính issue đó + các sub-tasks (nếu bật quét sub-tasks)
+  const issuesToScan = [
+    { key: issueRes.issue.key, summary: issueRes.issue.summary }
+  ];
+
+  const subtasks = issueRes.subtasks || [];
+  if (scanSubtasks && subtasks.length > 0) {
+    for (const st of subtasks) {
+      issuesToScan.push({ key: st.key, summary: st.summary });
+    }
+  }
+
+  if (badge) {
+    badge.innerHTML = `
+      <strong>[${issueRes.issue.key}]</strong>: ${issueRes.issue.summary}<br>
+      <em>Đang quét worklog trên <strong>${issuesToScan.length} task</strong>...</em>
+    `;
+  }
+
+  const allEntries = [];
+  for (const iss of issuesToScan) {
+    const wlRes = await JiraApi.getWorklogs(jiraBaseUrl, iss.key, authConfig);
+    if (wlRes.success && Array.isArray(wlRes.worklogs)) {
+      for (const wl of wlRes.worklogs) {
+        const startedDate = wl.startedDate || (wl.started ? wl.started.slice(0, 10) : '');
+        const displayDate = startedDate ? DateUtils.formatDateDMY(startedDate) : '';
+        const displayTime = wl.started && wl.started.length >= 16 ? wl.started.slice(11, 16) : '';
+        const hours = Math.round(((wl.timeSpentSeconds || 0) / 3600) * 10) / 10;
+
+        allEntries.push({
+          id: String(wl.id),
+          issueKey: iss.key,
+          issueSummary: iss.summary || '',
+          started: wl.started || '',
+          startedDate,
+          displayDate,
+          displayTime,
+          timeSpent: wl.timeSpent || `${hours}h`,
+          timeSpentSeconds: wl.timeSpentSeconds || 0,
+          hours,
+          comment: wl.comment || '',
+          authorName: wl.authorName || '',
+          authorDisplayName: wl.authorDisplayName || '',
+          selected: true
+        });
+      }
+    }
+  }
+
+  // Sắp xếp theo thời gian log mới nhất lên đầu
+  allEntries.sort((a, b) => (b.started || '').localeCompare(a.started || ''));
+  AppState.loadedDeleteWorklogs = allEntries;
+
+  if (badge) {
+    badge.innerHTML = `
+      <strong>[${issueRes.issue.key}]</strong>: ${issueRes.issue.summary}<br>
+      ✅ Đã quét <strong>${issuesToScan.length} task</strong> — Tìm thấy <strong>${allEntries.length} bản ghi logwork</strong>.
+    `;
+  }
+
+  renderDeleteWorklogsTable();
+}
+
+/**
+ * Lọc danh sách worklog theo tùy chọn "Chỉ hiển thị các bản ghi logwork của tôi"
+ */
+function getFilteredDeleteWorklogs() {
+  const onlyMine = document.getElementById('delete-only-mine')?.checked;
+  const myUsername = AppState.currentUser?.name;
+
+  if (onlyMine && myUsername) {
+    return AppState.loadedDeleteWorklogs.filter(
+      (item) => !item.authorName || item.authorName.toLowerCase() === myUsername.toLowerCase()
+    );
+  }
+  return AppState.loadedDeleteWorklogs;
+}
+
+/**
+ * Hiển thị danh sách các bản ghi logwork trước đó lên bảng trong Tab Xóa Logwork
+ */
+function renderDeleteWorklogsTable() {
+  const tbody = document.getElementById('delete-worklogs-tbody');
+  if (!tbody) return;
+
+  const filtered = getFilteredDeleteWorklogs();
+  tbody.innerHTML = '';
+
+  const uniqueTasks = new Set(filtered.map((it) => it.issueKey));
+  const totalSeconds = filtered.reduce((sum, it) => sum + (it.timeSpentSeconds || 0), 0);
+  const totalHours = Math.round((totalSeconds / 3600) * 10) / 10;
+
+  document.getElementById('del-stat-total-logs').textContent = filtered.length;
+  document.getElementById('del-stat-total-tasks').textContent = uniqueTasks.size;
+  document.getElementById('del-stat-total-hours').textContent = `${totalHours}h`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--text-sub); padding: 14px 6px;">
+          Không có bản ghi logwork nào trên Task này.
+        </td>
+      </tr>
+    `;
+    updateDeleteSelectionSummary();
+    return;
+  }
+
+  filtered.forEach((item) => {
+    const tr = document.createElement('tr');
+    const safeSummary = (item.issueSummary || item.comment || '').replace(/"/g, '&quot;');
+    const subText = item.issueSummary || item.comment || '';
+
+    tr.innerHTML = `
+      <td style="text-align: center;">
+        <input type="checkbox" class="del-worklog-row-check" data-wl-id="${item.id}" data-issue-key="${item.issueKey}" ${item.selected ? 'checked' : ''}>
+      </td>
+      <td>
+        <strong>${item.displayDate}</strong>
+        <span class="worklog-task-sub">${item.displayTime || ''}</span>
+      </td>
+      <td title="${safeSummary}">
+        <code>${item.issueKey}</code>
+        <span class="worklog-task-sub">${subText}</span>
+      </td>
+      <td><strong>${item.timeSpent}</strong></td>
+      <td style="text-align: center;">
+        <button type="button" class="btn-delete-inline btn-del-single-wl" data-wl-id="${item.id}" data-issue-key="${item.issueKey}" title="Xóa ngay bản ghi này">🗑️</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Sự kiện chọn từng dòng checkbox
+  tbody.querySelectorAll('.del-worklog-row-check').forEach((chk) => {
+    chk.addEventListener('change', (e) => {
+      const wlId = e.currentTarget.getAttribute('data-wl-id');
+      const issKey = e.currentTarget.getAttribute('data-issue-key');
+      const target = AppState.loadedDeleteWorklogs.find((w) => w.id === wlId && w.issueKey === issKey);
+      if (target) {
+        target.selected = e.currentTarget.checked;
+      }
+      updateDeleteSelectionSummary();
+    });
+  });
+
+  // Sự kiện bấm nút xóa lẻ từng dòng
+  tbody.querySelectorAll('.btn-del-single-wl').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const wlId = e.currentTarget.getAttribute('data-wl-id');
+      const issKey = e.currentTarget.getAttribute('data-issue-key');
+      handleDeleteSingleWorklogEntry(wlId, issKey);
+    });
+  });
+
+  updateDeleteSelectionSummary();
+}
+
+/**
+ * Cập nhật bộ đếm số lượng bản ghi đang chọn và trạng thái nút Xóa hàng loạt
+ */
+function updateDeleteSelectionSummary() {
+  const filtered = getFilteredDeleteWorklogs();
+  const selectedItems = filtered.filter((it) => it.selected);
+  const checkAll = document.getElementById('check-all-delete-worklogs');
+  const counterEl = document.getElementById('delete-selected-counter');
+  const executeBtn = document.getElementById('btn-execute-delete-worklogs');
+
+  if (checkAll) {
+    checkAll.checked = filtered.length > 0 && selectedItems.length === filtered.length;
+  }
+  if (counterEl) {
+    counterEl.textContent = `Đã chọn: ${selectedItems.length}/${filtered.length}`;
+  }
+  if (executeBtn) {
+    executeBtn.disabled = selectedItems.length === 0 || AppState.isRunningBatch;
+    executeBtn.textContent = `🗑️ Xóa các Logwork đã chọn (${selectedItems.length})`;
+  }
+}
+
+/**
+ * Xóa nhanh 1 bản ghi worklog đơn lẻ từ bảng danh sách
+ */
+async function handleDeleteSingleWorklogEntry(worklogId, issueKey) {
+  if (AppState.isRunningBatch) return;
+  const target = AppState.loadedDeleteWorklogs.find((w) => w.id === String(worklogId) && w.issueKey === issueKey);
+  if (!target) return;
+
+  const confirmMsg = `Xác nhận xóa bản ghi logwork:\n- Task: ${target.issueKey}\n- Ngày: ${target.displayDate} (${target.timeSpent})\n\nBạn có chắc chắn muốn xóa?`;
   if (!confirm(confirmMsg)) return;
 
   const authConfig = {
@@ -1267,92 +1556,57 @@ async function handleDeleteRowWorklogs(rowIndex) {
     personalAccessToken: AppState.settings.personalAccessToken
   };
 
-  let deletedCount = 0;
-  let errorMsg = '';
+  const res = await JiraApi.deleteWorklog(AppState.settings.jiraBaseUrl, issueKey, worklogId, authConfig);
+  if (res.success) {
+    AppState.loadedDeleteWorklogs = AppState.loadedDeleteWorklogs.filter(
+      (w) => !(w.id === String(worklogId) && w.issueKey === issueKey)
+    );
+    renderDeleteWorklogsTable();
 
-  for (const wl of item.worklogsToDelete) {
-    const res = await JiraApi.deleteWorklog(jiraBaseUrl, item.issueKey, wl.id, authConfig);
-    if (res.success) {
-      deletedCount++;
-    } else {
-      errorMsg = res.error || 'Lỗi xóa worklog';
-    }
-  }
-
-  if (deletedCount > 0) {
-    if (AppState.targetMode === 'parent-subtasks') {
-      await handleFetchParentSubtasks();
-    } else if (AppState.targetMode === 'single') {
-      const singleKey = document.getElementById('log-issue-key')?.value.trim();
-      if (singleKey) await verifySingleIssue(singleKey);
-    } else {
-      buildTaskMappingAndSummary();
+    // Đồng bộ lại dữ liệu bên Tab 1 nếu đang mở cùng Parent Task
+    if (AppState.loadedSubtasks.some((st) => st.key === issueKey)) {
+      handleFetchParentSubtasks();
     }
   } else {
-    alert(`❌ Không thể xóa logwork: ${errorMsg}`);
+    alert(`❌ Không thể xóa logwork: ${res.error}`);
   }
 }
 
 /**
- * Xóa hàng loạt các bản ghi logwork đã ghi trong phạm vi Tuần / Tháng đang chọn
+ * Xóa hàng loạt toàn bộ các bản ghi logwork đang được tích chọn trong Tab Xóa Logwork
  */
-async function handleBatchDeleteWorklogs() {
+async function handleExecuteDeleteSelectedWorklogs() {
   if (AppState.isRunningBatch) return;
 
   const jiraBaseUrl = AppState.settings.jiraBaseUrl;
-  if (!jiraBaseUrl) {
-    alert('Vui lòng vào tab Cài đặt để nhập địa chỉ Jira Base URL trước!');
+  const filtered = getFilteredDeleteWorklogs();
+  const selectedItems = filtered.filter((it) => it.selected);
+
+  if (selectedItems.length === 0) {
+    alert('Vui lòng tích chọn ít nhất 1 bản ghi logwork để xóa!');
     return;
   }
 
-  // Thu thập danh sách các worklog cần xóa từ bảng mapping hiện tại
-  const deleteTargets = [];
-  const seenWorklogIds = new Set();
-
-  for (const item of AppState.taskMapping) {
-    if (item.issueKey && !item.issueKey.startsWith('(') && Array.isArray(item.worklogsToDelete)) {
-      for (const wl of item.worklogsToDelete) {
-        const uniqueKey = `${item.issueKey}:${wl.id}`;
-        if (!seenWorklogIds.has(uniqueKey)) {
-          seenWorklogIds.add(uniqueKey);
-          deleteTargets.push({
-            issueKey: item.issueKey,
-            worklogId: wl.id,
-            displayDate: item.day.displayDate,
-            timeSpent: wl.timeSpent || ''
-          });
-        }
-      }
-    }
-  }
-
-  if (deleteTargets.length === 0) {
-    alert('Không có bản ghi logwork nào trong phạm vi đang chọn để xóa!');
-    return;
-  }
-
-  const modeText = AppState.timeMode === 'week' ? 'tuần này' : 'tháng này';
-  const confirmMsg = `⚠️ Xác nhận XÓA LOGWORK (${modeText}):\n- Tổng số bản ghi logwork sẽ xóa: ${deleteTargets.length}\n- Các task liên quan: ${[...new Set(deleteTargets.map((t) => t.issueKey))].join(', ')}\n\nBạn có chắc chắn muốn xóa để log lại không?`;
+  const uniqueTasks = [...new Set(selectedItems.map((t) => t.issueKey))];
+  const confirmMsg = `⚠️ Xác nhận XÓA ${selectedItems.length} bản ghi Logwork đã chọn:\n- Số task liên quan: ${uniqueTasks.length} (${uniqueTasks.slice(0, 6).join(', ')}${uniqueTasks.length > 6 ? '...' : ''})\n\nHành động này không thể hoàn tác. Bạn có chắc chắn muốn xóa?`;
   if (!confirm(confirmMsg)) return;
 
   AppState.isRunningBatch = true;
-  const deleteBtn = document.getElementById('btn-batch-delete-logwork');
-  const startBtn = document.getElementById('btn-start-logwork');
-  if (deleteBtn) {
-    deleteBtn.disabled = true;
-    deleteBtn.textContent = '⏳ Đang xóa...';
+  const executeBtn = document.getElementById('btn-execute-delete-worklogs');
+  if (executeBtn) {
+    executeBtn.disabled = true;
+    executeBtn.textContent = '⏳ Đang xóa logwork...';
   }
-  if (startBtn) startBtn.disabled = true;
 
-  const progressContainer = document.getElementById('progress-container');
-  const progressBarFill = document.getElementById('progress-bar-fill');
-  const progressText = document.getElementById('progress-text');
-  const progressPercent = document.getElementById('progress-percent');
-  const logConsole = document.getElementById('log-console');
+  const progressContainer = document.getElementById('delete-progress-container');
+  const progressFill = document.getElementById('delete-progress-fill');
+  const progressText = document.getElementById('delete-progress-text');
+  const progressPercent = document.getElementById('delete-progress-percent');
+  const logConsole = document.getElementById('delete-log-console');
 
   progressContainer.classList.remove('hidden');
   logConsole.innerHTML = '';
-  progressBarFill.style.width = '0%';
+  progressFill.style.width = '0%';
 
   const appendConsole = (msg, isError = false) => {
     const time = new Date().toLocaleTimeString('vi-VN');
@@ -1363,7 +1617,7 @@ async function handleBatchDeleteWorklogs() {
     logConsole.scrollTop = logConsole.scrollHeight;
   };
 
-  appendConsole(`Bắt đầu xóa ${deleteTargets.length} bản ghi logwork...`);
+  appendConsole(`Bắt đầu xóa ${selectedItems.length} bản ghi logwork...`);
 
   const authConfig = {
     authType: AppState.settings.authType,
@@ -1372,45 +1626,43 @@ async function handleBatchDeleteWorklogs() {
 
   let successCount = 0;
   let failCount = 0;
+  const deletedKeysSet = new Set();
 
-  for (let i = 0; i < deleteTargets.length; i++) {
-    const target = deleteTargets[i];
+  for (let i = 0; i < selectedItems.length; i++) {
+    const item = selectedItems[i];
     const currentIndex = i + 1;
-    const percent = Math.round((currentIndex / deleteTargets.length) * 100);
+    const percent = Math.round((currentIndex / selectedItems.length) * 100);
 
-    progressText.textContent = `Đang xóa log: ${target.issueKey} (${currentIndex}/${deleteTargets.length})...`;
+    progressText.textContent = `Đang xóa: ${item.issueKey} - ${item.displayDate} (${currentIndex}/${selectedItems.length})...`;
     progressPercent.textContent = `${percent}%`;
-    progressBarFill.style.width = `${percent}%`;
+    progressFill.style.width = `${percent}%`;
 
-    const res = await JiraApi.deleteWorklog(jiraBaseUrl, target.issueKey, target.worklogId, authConfig);
+    const res = await JiraApi.deleteWorklog(jiraBaseUrl, item.issueKey, item.id, authConfig);
     if (res.success) {
       successCount++;
-      appendConsole(`🗑️ [${target.displayDate}] Đã xóa logwork trên ${target.issueKey} (${target.timeSpent})`);
+      deletedKeysSet.add(`${item.issueKey}:${item.id}`);
+      appendConsole(`🗑️ [${item.displayDate}] Đã xóa logwork trên ${item.issueKey} (${item.timeSpent})`);
     } else {
       failCount++;
-      appendConsole(`❌ [${target.displayDate}] Xóa thất bại trên ${target.issueKey}: ${res.error}`, true);
+      appendConsole(`❌ [${item.displayDate}] Lỗi xóa trên ${item.issueKey}: ${res.error}`, true);
     }
 
     await new Promise((r) => setTimeout(r, 120));
   }
 
   AppState.isRunningBatch = false;
-  if (deleteBtn) {
-    deleteBtn.disabled = false;
-    deleteBtn.textContent = '🗑️ Xóa Logwork';
-  }
-  if (startBtn) startBtn.disabled = false;
+  progressText.textContent = `Hoàn tất! Đã xóa: ${successCount}, Thất bại: ${failCount}`;
+  appendConsole(`🏁 Tổng kết: Đã xóa thành công ${successCount}/${selectedItems.length} bản ghi logwork.`);
 
-  progressText.textContent = `Hoàn tất xóa! Đã xóa: ${successCount}, Lỗi: ${failCount}`;
-  appendConsole(`🏁 Tổng kết: Đã xóa ${successCount}/${deleteTargets.length} bản ghi logwork.`);
+  // Loại bỏ các bản ghi đã xóa thành công khỏi state và cập nhật bảng
+  AppState.loadedDeleteWorklogs = AppState.loadedDeleteWorklogs.filter(
+    (w) => !deletedKeysSet.has(`${w.issueKey}:${w.id}`)
+  );
+  renderDeleteWorklogsTable();
 
-  if (AppState.targetMode === 'parent-subtasks') {
+  // Đồng bộ lại Tab 1 nếu đã tải subtasks trước đó
+  if (AppState.loadedSubtasks.length > 0) {
     handleFetchParentSubtasks();
-  } else if (AppState.targetMode === 'single') {
-    const singleKey = document.getElementById('log-issue-key')?.value.trim();
-    if (singleKey) verifySingleIssue(singleKey);
-  } else {
-    buildTaskMappingAndSummary();
   }
 }
 
@@ -2054,11 +2306,13 @@ async function loadAndRenderMyIssues(filter = 'unresolved', forceRefresh = false
   const parentSelect = document.getElementById('quick-parent-issue-select');
   const singleSelect = document.getElementById('quick-single-issue-select');
   const createParentSelect = document.getElementById('quick-create-parent-select');
+  const deleteIssueSelect = document.getElementById('quick-delete-issue-select');
 
   const updateSelectPlaceholders = (text) => {
     if (parentSelect) parentSelect.innerHTML = `<option value="">-- ${text} --</option>`;
     if (singleSelect) singleSelect.innerHTML = `<option value="">-- ${text} --</option>`;
     if (createParentSelect) createParentSelect.innerHTML = `<option value="">-- ${text} --</option>`;
+    if (deleteIssueSelect) deleteIssueSelect.innerHTML = `<option value="">-- ${text} --</option>`;
   };
 
   if (!forceRefresh && AppState.cachedMyIssues && AppState.cachedMyIssues.length > 0) {
@@ -2085,6 +2339,7 @@ function populateMyIssuesDropdowns(issues) {
   const parentSelect = document.getElementById('quick-parent-issue-select');
   const singleSelect = document.getElementById('quick-single-issue-select');
   const createParentSelect = document.getElementById('quick-create-parent-select');
+  const deleteIssueSelect = document.getElementById('quick-delete-issue-select');
 
   const buildOptions = (placeholder, onlyNonSubtasks = false) => {
     const opts = [`<option value="">-- ${placeholder} --</option>`];
@@ -2106,6 +2361,7 @@ function populateMyIssuesDropdowns(issues) {
   if (parentSelect) parentSelect.innerHTML = buildOptions('Chọn nhanh Task của bạn (My Issues)');
   if (singleSelect) singleSelect.innerHTML = buildOptions('Chọn nhanh Task đơn của bạn');
   if (createParentSelect) createParentSelect.innerHTML = buildOptions('Chọn nhanh Task Cha từ danh sách của bạn', true);
+  if (deleteIssueSelect) deleteIssueSelect.innerHTML = buildOptions('Chọn nhanh Task Cha hoặc Task đơn của bạn');
 }
 
 /**

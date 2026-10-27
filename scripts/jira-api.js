@@ -776,10 +776,11 @@ const JiraApi = {
     }
 
     const transitionsEndpoint = `${cleanUrl}/rest/api/2/issue/${key}/transitions`;
+    const transitionsMetaEndpoint = `${transitionsEndpoint}?expand=transitions.fields`;
 
     try {
-      // 1. Lấy danh sách các transition hợp lệ hiện tại của issue
-      const getRes = await fetch(transitionsEndpoint, {
+      // 1. Lấy danh sách các transition hợp lệ hiện tại của issue kèm metadata fields
+      const getRes = await fetch(transitionsMetaEndpoint, {
         method: 'GET',
         headers: this.buildHeaders(authConfig),
         credentials: 'include'
@@ -842,29 +843,78 @@ const JiraApi = {
         };
       }
 
-      // 3. Thực hiện chuyển trạng thái (POST)
-      const postBody = {
+      // 3. Xác định giá trị Resolution -> Done để chuyển kèm khi Resolve
+      let resolutionPayload = { name: 'Done' };
+      const allowedResolutions = targetTransition.fields?.resolution?.allowedValues;
+      if (Array.isArray(allowedResolutions) && allowedResolutions.length > 0) {
+        const doneOpt =
+          allowedResolutions.find((r) => /^done$/i.test((r.name || '').trim())) ||
+          allowedResolutions.find((r) => /(done|hoàn thành|fixed|resolved|xong)/i.test(r.name || '')) ||
+          allowedResolutions.find((r) => !excludeRegex.test(r.name || ''));
+
+        if (doneOpt) {
+          resolutionPayload = doneOpt.name ? { name: doneOpt.name } : { id: String(doneOpt.id) };
+        }
+      }
+
+      // 4. Thực hiện chuyển trạng thái kèm Resolution: Done (POST)
+      const postBodyWithResolution = {
         transition: {
           id: targetTransition.id
+        },
+        fields: {
+          resolution: resolutionPayload
         }
       };
 
-      const postRes = await fetch(transitionsEndpoint, {
+      let postRes = await fetch(transitionsEndpoint, {
         method: 'POST',
         headers: this.buildHeaders(authConfig),
         credentials: 'include',
-        body: JSON.stringify(postBody)
+        body: JSON.stringify(postBodyWithResolution)
       });
 
+      // Fallback nếu màn hình transition không cho phép truyền trực tiếp field resolution
       if (!postRes.ok && postRes.status !== 204) {
-        const errorMsg = await this.parseErrorMessage(postRes);
-        return { success: false, error: errorMsg };
+        const fallbackBody = {
+          transition: {
+            id: targetTransition.id
+          }
+        };
+        postRes = await fetch(transitionsEndpoint, {
+          method: 'POST',
+          headers: this.buildHeaders(authConfig),
+          credentials: 'include',
+          body: JSON.stringify(fallbackBody)
+        });
+
+        if (!postRes.ok && postRes.status !== 204) {
+          const errorMsg = await this.parseErrorMessage(postRes);
+          return { success: false, error: errorMsg };
+        }
+
+        // Cố gắng cập nhật trường Resolution -> Done qua PUT issue
+        try {
+          await fetch(`${cleanUrl}/rest/api/2/issue/${key}`, {
+            method: 'PUT',
+            headers: this.buildHeaders(authConfig),
+            credentials: 'include',
+            body: JSON.stringify({
+              fields: {
+                resolution: resolutionPayload
+              }
+            })
+          });
+        } catch (_) {
+          // Bỏ qua nếu dự án khóa edit trực tiếp resolution
+        }
       }
 
       return {
         success: true,
         transitionName: targetTransition.name,
-        toStatus: targetTransition.to?.name || 'Resolved'
+        toStatus: targetTransition.to?.name || 'Resolved',
+        resolution: resolutionPayload.name || 'Done'
       };
     } catch (err) {
       return { success: false, error: err.message };

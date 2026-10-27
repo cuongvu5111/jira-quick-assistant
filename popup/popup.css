@@ -145,19 +145,20 @@ body {
 
 .tab-btn {
   flex: 1;
-  padding: 9px 6px;
+  padding: 9px 4px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text-sub);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
+  white-space: nowrap;
   transition: all 0.2s ease;
 }
 
@@ -725,6 +726,39 @@ label {
 
 .btn-delete-inline:hover:not(:disabled) {
   background-color: #ffbdad;
+}
+
+.btn-danger {
+  background-color: #de350b;
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #bf2600;
+}
+
+.delete-worklogs-table-wrapper {
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: #ffffff;
+}
+
+.delete-worklogs-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.worklog-task-sub {
+  display: block;
+  font-size: 10px;
+  color: var(--text-sub);
+  max-width: 195px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .action-footer-buttons {
